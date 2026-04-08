@@ -5,230 +5,703 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Fleet Radar">
+<meta name="apple-mobile-web-app-title" content="Dispatch Radar">
 <meta name="theme-color" content="#111827">
 <meta name="mobile-web-app-capable" content="yes">
-<title>Fleet Radar Mobile</title>
+<title>Dispatch Radar</title>
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%23111827'/%3E%3Ccircle cx='90' cy='85' r='50' fill='none' stroke='%2310b981' stroke-width='5'/%3E%3Ccircle cx='90' cy='85' r='6' fill='%2310b981'/%3E%3Cline x1='90' y1='85' x2='90' y2='50' stroke='%2310b981' stroke-width='4' stroke-linecap='round'/%3E%3Ctext x='90' y='155' text-anchor='middle' fill='%2310b981' font-size='18' font-weight='bold' font-family='system-ui'%3ERADAR%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#111827;--bg2:#1f2937;--bg3:#374151;--fg:#f3f4f6;--fg2:#9ca3af;--fg3:#6b7280;--green:#10b981;--blue:#3b82f6;--amber:#f59e0b;--red:#ef4444;--indigo:#818cf8;--cyan:#06b6d4;--violet:#8b5cf6;--orange:#fb923c;--purple:#a855f7;--safe-top:env(safe-area-inset-top,0px);--safe-bot:env(safe-area-inset-bottom,0px)}
-html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,sans-serif;font-size:13px;-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
-#app{display:flex;flex-direction:column;height:100%;padding-top:var(--safe-top);padding-bottom:var(--safe-bot);overflow:hidden}
+/* ═══════════════════════════════════════════════
+   DISPATCH RADAR MOBILE — V3.0
+   By: Andrismar T.
+   ═══════════════════════════════════════════════ */
 
-/* Header */
-.hdr{background:var(--bg);padding:8px 12px 6px;border-bottom:1px solid var(--bg3);flex-shrink:0;z-index:10}
-.hdr-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.hdr-title{font-size:15px;font-weight:800;color:var(--green);display:flex;align-items:center;gap:5px}
-.hdr-title .dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(16,185,129,.5)}50%{opacity:.7;box-shadow:0 0 0 5px rgba(16,185,129,0)}}
-.hdr-controls{display:flex;align-items:center;gap:5px}
-.hdr-btn{background:var(--bg2);color:var(--fg2);border:1px solid var(--bg3);border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;white-space:nowrap;font-weight:600;transition:all .15s}
-.hdr-btn:active{transform:scale(.95)}
-.hdr-btn.active{background:var(--green);color:#fff;border-color:var(--green)}
-.hdr-station{font-size:12px;font-weight:700;color:var(--indigo);padding:3px 8px;background:var(--bg2);border:1px solid var(--bg3);border-radius:6px;cursor:pointer}
-.hdr-sync{font-size:10px;color:var(--fg3);padding-top:2px;display:flex;align-items:center;gap:4px}
-.sync-dot{width:6px;height:6px;border-radius:50%;background:var(--fg3);transition:background .3s}
-.sync-dot.live{background:var(--green)}
-.sync-dot.err{background:var(--red)}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* Global progress bar */
-.gpb{padding:5px 12px;flex-shrink:0}
-.gpb-label{display:flex;justify-content:space-between;font-size:11px;color:var(--fg2);margin-bottom:3px}
-.gpb-label b{color:#fff}
-.gpb-track{background:var(--bg3);border-radius:4px;height:7px;overflow:hidden}
-.gpb-fill{height:100%;border-radius:4px;transition:width .6s ease;background:var(--green)}
-@keyframes barMove{to{background-position:30px 0}}
-.gpb-fill.animated{background-image:linear-gradient(45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent);background-size:30px 30px;animation:barMove 1s linear infinite}
+:root {
+  --bg: #111827; --bg2: #1f2937; --bg3: #374151;
+  --fg: #f3f4f6; --fg2: #9ca3af; --fg3: #6b7280;
+  --green: #10b981; --blue: #3b82f6; --amber: #f59e0b; --red: #ef4444;
+  --indigo: #818cf8; --cyan: #06b6d4; --violet: #8b5cf6;
+  --orange: #fb923c; --purple: #a855f7;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bot: env(safe-area-inset-bottom, 0px);
+}
 
-/* Search */
-.search-wrap{padding:0 12px 5px;flex-shrink:0;position:relative}
-.search-input{width:100%;background:var(--bg2);border:1px solid var(--bg3);color:#fff;padding:7px 10px 7px 32px;border-radius:8px;font-size:13px;outline:none;transition:border-color .2s}
-.search-input:focus{border-color:var(--blue)}
-.search-wrap::before{content:'';position:absolute;left:22px;top:50%;transform:translateY(-50%);width:13px;height:13px;border:2px solid var(--fg3);border-radius:50%;pointer-events:none}
-.search-wrap::after{content:'';position:absolute;left:34px;top:calc(50% + 5px);width:2px;height:5px;background:var(--fg3);transform:rotate(-45deg);pointer-events:none}
+html, body {
+  height: 100%; overflow: hidden;
+  background: var(--bg); color: var(--fg);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
 
-/* Filter tabs */
-.filters{padding:0 12px 5px;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-shrink:0;scrollbar-width:none}
-.filters::-webkit-scrollbar{display:none}
-.filters-row{display:flex;gap:4px;min-width:max-content}
-.fbtn{background:var(--bg2);color:var(--fg2);border:1px solid var(--bg3);padding:5px 7px;border-radius:6px;font-size:10.5px;cursor:pointer;white-space:nowrap;font-weight:600;transition:all .15s;flex-shrink:0;user-select:none}
-.fbtn:active{transform:scale(.95)}
-.fbtn.active{background:var(--blue);color:#fff;border-color:#60a5fa;font-weight:700}
+#app {
+  display: flex; flex-direction: column;
+  height: 100%; overflow: hidden;
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bot);
+}
 
-/* View toggle row */
-.view-row{display:flex;align-items:center;justify-content:space-between;padding:0 12px 4px;flex-shrink:0}
-.view-toggle{display:flex;gap:3px}
-.vbtn{background:var(--bg2);color:var(--fg3);border:1px solid var(--bg3);padding:3px 8px;border-radius:5px;font-size:10px;cursor:pointer;font-weight:600}
-.vbtn.active{background:var(--bg3);color:#fff}
-.sort-label{font-size:10px;color:var(--fg3);cursor:pointer}
+/* ── Header ── */
+.hdr {
+  background: var(--bg);
+  padding: 6px 12px 4px;
+  border-bottom: 1px solid var(--bg3);
+  flex-shrink: 0; z-index: 10;
+}
 
-/* Driver list - FIX: proper flex scroll */
-.driver-list-wrap{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 10px 20px;overscroll-behavior:contain}
-.driver-list{display:flex;flex-direction:column;gap:5px}
+.hdr-top {
+  display: flex; align-items: center;
+  justify-content: space-between; gap: 6px;
+}
 
-/* Driver card */
-.dcard{background:var(--bg2);border-radius:6px;padding:7px 9px;cursor:pointer;transition:transform .1s;position:relative;overflow:hidden;border:1px solid transparent}
-.dcard:active{transform:scale(.985)}
-.dcard-hdr{display:flex;justify-content:space-between;align-items:flex-start;gap:4px}
-.dcard-left{flex:1;min-width:0;overflow:hidden}
-.dcard-name{display:flex;align-items:center;gap:4px;font-weight:700;font-size:13px;color:#fff;overflow:hidden}
-.dcard-name .route{font-weight:800;flex-shrink:0;white-space:nowrap}
-.dcard-name .dname{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-.dcard-veh{font-size:10px;color:#d1d5db;font-weight:600;padding-left:20px;margin-top:1px;line-height:1.2}
-.dcard-right{display:flex;align-items:center;gap:5px;flex-shrink:0;padding-top:1px}
-.dcard-bar{width:55px;height:5px;background:var(--bg3);border-radius:3px;overflow:hidden}
-.dcard-bar-fill{height:100%;border-radius:3px;transition:width .4s}
-.dcard-time{font-size:10px;color:var(--fg2);font-weight:500;white-space:nowrap}
-.badge-row{display:flex;flex-wrap:wrap;gap:3px;margin-top:3px}
-.badge{padding:1px 5px;border-radius:3px;font-size:8px;font-weight:700;white-space:nowrap;line-height:1.4}
-.dcard-stats{display:flex;justify-content:space-between;align-items:baseline;margin-top:3px;font-size:10.5px;gap:3px}
-.dcard-stats .stat{color:#e5e7eb;font-weight:600}
-.dcard-stats .stat b{color:#fff;font-weight:700}
-.dcard-stats .sep{color:var(--bg3);font-size:8px}
-.gps-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:3px;vertical-align:middle;flex-shrink:0}
-.idle-mins{color:var(--amber);font-weight:700;font-size:10px;margin-top:2px}
-.dcard.insp-compact{padding:5px 8px}
-.dcard.insp-compact .dcard-stats{display:none}
+.hdr-brand {
+  display: flex; flex-direction: column; line-height: 1.2;
+}
 
-/* Modal */
-.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:100;display:none;align-items:flex-end;justify-content:center}
-.modal-bg.open{display:flex}
-.modal-card{background:var(--bg);border-radius:16px 16px 0 0;width:100%;max-width:500px;max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px 14px calc(16px + var(--safe-bot));animation:slideUp .25s ease}
-@keyframes slideUp{from{transform:translateY(30%);opacity:0}to{transform:translateY(0);opacity:1}}
-.modal-close{background:var(--bg2);border:1px solid var(--bg3);color:var(--fg2);padding:4px 12px;border-radius:6px;cursor:pointer;font-size:13px}
-.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px}
-.info-grid.tri{grid-template-columns:1fr 1fr 1fr}
-.info-box{background:var(--bg2);padding:7px 10px;border-radius:7px}
-.info-box .label{font-size:9px;color:var(--fg3)}
-.info-box .val{font-size:13px;font-weight:700}
+.hdr-brand .title {
+  font-size: 14px; font-weight: 800; color: var(--green);
+  display: flex; align-items: center; gap: 4px;
+}
 
-/* Map overlay */
-.map-overlay{position:fixed;inset:0;z-index:150;background:var(--bg);display:none;flex-direction:column}
-.map-overlay.open{display:flex}
-.map-hdr{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg);border-bottom:1px solid var(--bg3);flex-shrink:0;padding-top:calc(8px + var(--safe-top))}
-#mapContainer{flex:1;min-height:0}
+.hdr-brand .title .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--green);
+  animation: pulse 2s infinite;
+}
 
-/* Station picker */
-.station-picker{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:200;display:none;align-items:center;justify-content:center}
-.station-picker.open{display:flex}
-.station-picker-card{background:var(--bg);border-radius:12px;padding:20px;width:80%;max-width:300px;text-align:center}
-.station-btn{display:block;width:100%;padding:12px;margin-bottom:8px;background:var(--bg2);border:1px solid var(--bg3);color:#fff;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;transition:all .15s}
-.station-btn:active{transform:scale(.96);background:var(--blue)}
-.station-btn.current{border-color:var(--green);background:#10b98120}
+@keyframes pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(16,185,129,.5); }
+  50% { opacity: .7; box-shadow: 0 0 0 5px rgba(16,185,129,0); }
+}
 
-/* Setup screen */
-.setup-screen{padding:30px 20px;text-align:center;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
-.setup-screen h2{font-size:20px;color:var(--green)}
-.setup-screen p{font-size:13px;color:var(--fg2);max-width:300px;line-height:1.5}
-.setup-input{width:100%;max-width:340px;background:var(--bg2);border:1px solid var(--bg3);color:#fff;padding:10px 14px;border-radius:8px;font-size:13px;outline:none}
-.setup-btn{padding:10px 24px;background:var(--green);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer}
+.hdr-brand .station-line {
+  font-size: 10px; color: var(--fg3);
+  display: flex; align-items: center; gap: 4px;
+}
 
-.empty{text-align:center;padding:40px 20px;color:var(--fg3)}
-.spinner{width:24px;height:24px;border:3px solid var(--bg3);border-top-color:var(--green);border-radius:50%;animation:spin .6s linear infinite;margin:0 auto}
-@keyframes spin{to{transform:rotate(360deg)}}
+.hdr-brand .sig {
+  font-size: 8px; color: #4b5563; font-style: italic;
+}
 
-/* Deadline pulse */
-@keyframes deadlinePulse{0%,100%{opacity:1}50%{opacity:.55}}
-.pulse-slow{animation:deadlinePulse 2.5s ease-in-out infinite}
-.pulse-fast{animation:deadlinePulse 1s ease-in-out infinite}
-.pulse-danger{animation:deadlinePulse .6s ease-in-out infinite}
+.hdr-controls {
+  display: flex; align-items: center; gap: 4px;
+}
+
+.hdr-btn {
+  background: var(--bg2); color: var(--fg2);
+  border: 1px solid var(--bg3); border-radius: 6px;
+  padding: 4px 7px; font-size: 10px; cursor: pointer;
+  white-space: nowrap; font-weight: 600;
+  transition: all .15s;
+}
+
+.hdr-btn:active { transform: scale(.95); }
+
+.hdr-btn.active {
+  background: var(--green); color: #fff;
+  border-color: var(--green);
+}
+
+.hdr-station {
+  font-size: 11px; font-weight: 700; color: var(--indigo);
+  padding: 3px 7px; background: var(--bg2);
+  border: 1px solid var(--bg3); border-radius: 6px;
+  cursor: pointer;
+}
+
+/* ── Toolbar row ── */
+.toolbar {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  padding: 4px 12px; flex-shrink: 0;
+}
+
+.tool-btn {
+  background: var(--bg2); color: var(--fg2);
+  border: 1px solid var(--bg3); border-radius: 5px;
+  padding: 4px 8px; font-size: 10px; cursor: pointer;
+  font-weight: 600; white-space: nowrap;
+  transition: all .12s;
+}
+
+.tool-btn:active { transform: scale(.95); }
+
+.tool-btn.synced {
+  border-color: var(--green); color: var(--green);
+}
+
+/* ── Sync status ── */
+.hdr-sync {
+  font-size: 9px; color: var(--fg3);
+  padding: 2px 12px 0; display: flex;
+  align-items: center; gap: 4px; flex-shrink: 0;
+}
+
+.sync-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--fg3); transition: background .3s;
+}
+
+.sync-dot.live { background: var(--green); }
+.sync-dot.err { background: var(--red); }
+
+/* ── Global progress bar ── */
+.gpb {
+  padding: 4px 12px; flex-shrink: 0;
+}
+
+.gpb-label {
+  display: flex; justify-content: space-between;
+  font-size: 10px; color: var(--fg2); margin-bottom: 2px;
+}
+
+.gpb-label b { color: #fff; }
+
+.gpb-track {
+  background: var(--bg3); border-radius: 4px;
+  height: 6px; overflow: hidden;
+}
+
+.gpb-fill {
+  height: 100%; border-radius: 4px;
+  transition: width .6s ease; background: var(--green);
+}
+
+@keyframes barMove { to { background-position: 30px 0; } }
+
+.gpb-fill.animated {
+  background-image: linear-gradient(45deg,
+    rgba(255,255,255,.15) 25%, transparent 25%,
+    transparent 50%, rgba(255,255,255,.15) 50%,
+    rgba(255,255,255,.15) 75%, transparent 75%, transparent);
+  background-size: 30px 30px;
+  animation: barMove 1s linear infinite;
+}
+
+/* ── Search ── */
+.search-wrap {
+  padding: 0 12px 4px; flex-shrink: 0; position: relative;
+}
+
+.search-input {
+  width: 100%; background: var(--bg2);
+  border: 1px solid var(--bg3); color: #fff;
+  padding: 6px 10px 6px 30px; border-radius: 7px;
+  font-size: 12px; outline: none;
+  transition: border-color .2s;
+}
+
+.search-input:focus { border-color: var(--blue); }
+
+.search-wrap::before {
+  content: ''; position: absolute;
+  left: 22px; top: 50%; transform: translateY(-50%);
+  width: 12px; height: 12px;
+  border: 2px solid var(--fg3); border-radius: 50%;
+  pointer-events: none;
+}
+
+/* ── Filter tabs ── */
+.filters {
+  padding: 0 12px 4px;
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+  flex-shrink: 0; scrollbar-width: none;
+}
+
+.filters::-webkit-scrollbar { display: none; }
+
+.filters-row {
+  display: flex; gap: 4px; min-width: max-content;
+}
+
+.fbtn {
+  background: var(--bg2); color: var(--fg2);
+  border: 1px solid var(--bg3);
+  padding: 4px 7px; border-radius: 6px;
+  font-size: 10px; cursor: pointer;
+  white-space: nowrap; font-weight: 600;
+  transition: all .15s; flex-shrink: 0;
+  user-select: none;
+}
+
+.fbtn:active { transform: scale(.95); }
+
+.fbtn.active {
+  background: var(--blue); color: #fff;
+  border-color: #60a5fa; font-weight: 700;
+}
+
+/* ── Driver list (SCROLL FIX) ── */
+.driver-list-wrap {
+  flex: 1; min-height: 0;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 0 10px 20px;
+  overscroll-behavior: contain;
+}
+
+.driver-list {
+  display: flex; flex-direction: column; gap: 4px;
+}
+
+/* ── Driver card ── */
+.dcard {
+  background: var(--bg2); border-radius: 6px;
+  padding: 7px 9px; cursor: pointer;
+  transition: transform .1s;
+  position: relative; overflow: hidden;
+  border: 1px solid transparent;
+}
+
+.dcard:active { transform: scale(.985); }
+
+.dcard-hdr {
+  display: flex; justify-content: space-between;
+  align-items: flex-start; gap: 4px;
+}
+
+.dcard-left { flex: 1; min-width: 0; overflow: hidden; }
+
+.dcard-name {
+  display: flex; align-items: center; gap: 3px;
+  font-weight: 700; font-size: 12px; color: #fff;
+  overflow: hidden;
+}
+
+.dcard-name .route {
+  font-weight: 800; flex-shrink: 0; white-space: nowrap;
+}
+
+.dcard-name .dname {
+  font-weight: 600; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+
+.dcard-veh {
+  font-size: 9px; color: #d1d5db; font-weight: 600;
+  padding-left: 18px; margin-top: 1px; line-height: 1.2;
+}
+
+.dcard-right {
+  display: flex; align-items: center; gap: 5px;
+  flex-shrink: 0; padding-top: 1px;
+}
+
+.dcard-bar {
+  width: 50px; height: 5px;
+  background: var(--bg3); border-radius: 3px; overflow: hidden;
+}
+
+.dcard-bar-fill {
+  height: 100%; border-radius: 3px; transition: width .4s;
+}
+
+.dcard-time {
+  font-size: 9px; color: var(--fg2); font-weight: 500;
+  white-space: nowrap;
+}
+
+.badge-row {
+  display: flex; flex-wrap: wrap; gap: 2px; margin-top: 2px;
+}
+
+.badge {
+  padding: 1px 4px; border-radius: 3px;
+  font-size: 7.5px; font-weight: 700;
+  white-space: nowrap; line-height: 1.4;
+}
+
+.dcard-stats {
+  display: flex; justify-content: space-between;
+  align-items: baseline; margin-top: 2px;
+  font-size: 10px; gap: 2px;
+}
+
+.dcard-stats .stat { color: #e5e7eb; font-weight: 600; }
+.dcard-stats .stat b { color: #fff; font-weight: 700; }
+.dcard-stats .sep { color: var(--bg3); font-size: 8px; }
+
+.gps-dot {
+  display: inline-block; width: 6px; height: 6px;
+  border-radius: 50%; margin-right: 3px;
+  vertical-align: middle; flex-shrink: 0;
+}
+
+.idle-mins {
+  color: var(--amber); font-weight: 700;
+  font-size: 10px; margin-top: 1px;
+}
+
+/* ── Modal ── */
+.modal-bg {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.75);
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  z-index: 100; display: none;
+  align-items: flex-end; justify-content: center;
+}
+
+.modal-bg.open { display: flex; }
+
+.modal-card {
+  background: var(--bg); border-radius: 16px 16px 0 0;
+  width: 100%; max-width: 500px; max-height: 90vh;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 14px 12px calc(14px + var(--safe-bot));
+  animation: slideUp .25s ease;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(30%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.modal-close {
+  background: var(--bg2); border: 1px solid var(--bg3);
+  color: var(--fg2); padding: 4px 12px;
+  border-radius: 6px; cursor: pointer; font-size: 13px;
+}
+
+.info-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 5px; margin-bottom: 8px;
+}
+
+.info-grid.tri { grid-template-columns: 1fr 1fr 1fr; }
+
+.info-box {
+  background: var(--bg2); padding: 6px 8px; border-radius: 6px;
+}
+
+.info-box .label { font-size: 8px; color: var(--fg3); }
+.info-box .val { font-size: 12px; font-weight: 700; }
+
+/* ── Action buttons grid ── */
+.action-grid {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin-bottom: 6px;
+}
+
+.act-btn {
+  background: var(--bg3); color: var(--fg3);
+  border: none; border-radius: 5px;
+  padding: 5px 8px; cursor: pointer;
+  font-size: 10px; font-weight: 700;
+  transition: all .12s;
+}
+
+.act-btn:active { transform: scale(.95); }
+.act-btn.on { background: var(--blue); color: #fff; }
+
+/* ── Map overlay ── */
+.map-overlay {
+  position: fixed; inset: 0; z-index: 150;
+  background: var(--bg);
+  display: none; flex-direction: column;
+}
+
+.map-overlay.open { display: flex; }
+
+.map-hdr {
+  display: flex; align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px; background: var(--bg);
+  border-bottom: 1px solid var(--bg3);
+  flex-shrink: 0;
+  padding-top: calc(8px + var(--safe-top));
+}
+
+#mapContainer { flex: 1; min-height: 0; }
+
+/* ── Debrief overlay ── */
+.debrief-overlay {
+  position: fixed; inset: 0; z-index: 160;
+  background: var(--bg);
+  display: none; flex-direction: column;
+}
+
+.debrief-overlay.open { display: flex; }
+
+.debrief-hdr {
+  display: flex; align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px; background: var(--bg);
+  border-bottom: 1px solid var(--bg3);
+  flex-shrink: 0;
+  padding-top: calc(8px + var(--safe-top));
+}
+
+.debrief-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 10px 12px 20px;
+}
+
+.debrief-textarea {
+  width: 100%; min-height: 200px;
+  background: var(--bg2); border: 1px solid var(--bg3);
+  color: var(--fg); border-radius: 8px;
+  padding: 10px; font-size: 12px;
+  font-family: system-ui; outline: none;
+  resize: vertical;
+}
+
+.debrief-textarea:focus { border-color: var(--blue); }
+
+/* ── Staples overlay ── */
+.staples-overlay {
+  position: fixed; inset: 0; z-index: 160;
+  background: var(--bg);
+  display: none; flex-direction: column;
+}
+
+.staples-overlay.open { display: flex; }
+
+.staples-input {
+  background: var(--bg2); border: 1px solid var(--bg3);
+  color: var(--fg); border-radius: 6px;
+  padding: 8px 10px; font-size: 14px;
+  width: 100%; outline: none;
+}
+
+.staples-input:focus { border-color: var(--green); }
+
+/* ── Station picker ── */
+.station-picker {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.8);
+  z-index: 200; display: none;
+  align-items: center; justify-content: center;
+}
+
+.station-picker.open { display: flex; }
+
+.station-picker-card {
+  background: var(--bg); border-radius: 12px;
+  padding: 20px; width: 80%; max-width: 300px;
+  text-align: center;
+}
+
+.station-btn {
+  display: block; width: 100%; padding: 12px;
+  margin-bottom: 8px; background: var(--bg2);
+  border: 1px solid var(--bg3); color: #fff;
+  border-radius: 8px; font-size: 15px;
+  font-weight: 700; cursor: pointer;
+}
+
+.station-btn:active { transform: scale(.96); }
+.station-btn.current { border-color: var(--green); background: #10b98120; }
+
+/* ── Setup screen ── */
+.setup-screen {
+  padding: 30px 20px; text-align: center;
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 16px;
+}
+
+.setup-screen h2 { font-size: 20px; color: var(--green); }
+
+.setup-input {
+  width: 100%; max-width: 340px;
+  background: var(--bg2); border: 1px solid var(--bg3);
+  color: #fff; padding: 10px 14px; border-radius: 8px;
+  font-size: 13px; outline: none;
+}
+
+.setup-submit {
+  padding: 10px 24px; background: var(--green);
+  color: #fff; border: none; border-radius: 8px;
+  font-size: 14px; font-weight: 700; cursor: pointer;
+}
+
+.empty {
+  text-align: center; padding: 30px 20px; color: var(--fg3);
+}
+
+.spinner {
+  width: 24px; height: 24px;
+  border: 3px solid var(--bg3); border-top-color: var(--green);
+  border-radius: 50%;
+  animation: spin .6s linear infinite; margin: 0 auto;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Toast ── */
+.toast {
+  position: fixed; bottom: calc(20px + var(--safe-bot));
+  left: 50%; transform: translateX(-50%);
+  background: #065f46; color: #d1fae5;
+  border: 1px solid #10b981; border-radius: 8px;
+  padding: 8px 16px; font-size: 12px; font-weight: 600;
+  z-index: 300; animation: fadeInUp .3s ease;
+  pointer-events: none;
+}
+
+@keyframes fadeInUp {
+  from { transform: translateX(-50%) translateY(10px); opacity: 0; }
+  to { transform: translateX(-50%) translateY(0); opacity: 1; }
+}
+
+@keyframes deadlinePulse {
+  0%, 100% { opacity: 1; } 50% { opacity: .55; }
+}
+
+.pulse-slow { animation: deadlinePulse 2.5s ease-in-out infinite; }
+.pulse-fast { animation: deadlinePulse 1s ease-in-out infinite; }
 </style>
 </head>
 <body>
-
 <div id="app">
+
+  <!-- ═══ Setup Screen ═══ -->
   <div id="setup" class="setup-screen" style="display:none">
-    <h2>Fleet Radar Mobile</h2>
-    <p>Enter your Cloud Sync URL to connect.</p>
+    <h2>Dispatch Radar</h2>
+    <p style="font-size:12px;color:var(--fg2)">Enter Cloud Sync URL to connect.</p>
     <input id="setup-url" class="setup-input" placeholder="https://script.google.com/macros/s/.../exec">
-    <button class="setup-btn" onclick="saveSetup()">Connect</button>
+    <button class="setup-submit" onclick="saveSetup()">Connect</button>
+    <p style="font-size:8px;color:var(--fg3);font-style:italic">By: Andrismar T.</p>
   </div>
 
+  <!-- ═══ Main App ═══ -->
   <div id="main" style="display:none">
+
+    <!-- Header -->
     <div class="hdr">
       <div class="hdr-top">
-        <div class="hdr-title"><span class="dot"></span> Fleet Radar</div>
+        <div class="hdr-brand">
+          <div class="title"><span class="dot"></span> Dispatch Radar <span id="stationBadge" class="hdr-station" onclick="openStationPicker()">DJE5</span></div>
+          <div class="station-line">
+            <span class="sig">By: Andrismar T.</span>
+          </div>
+        </div>
         <div class="hdr-controls">
-          <button class="hdr-btn" onclick="openMap()" id="mapBtn">🗺</button>
-          <span id="stationLabel" class="hdr-station" onclick="openStationPicker()">DJE5</span>
-          <button class="hdr-btn" onclick="forceRefresh()" id="refreshBtn">↻</button>
+          <button class="hdr-btn" onclick="forceRefresh()" id="refreshBtn" title="Refresh">↻</button>
         </div>
       </div>
-      <div class="hdr-sync">
-        <span class="sync-dot" id="syncDot"></span>
-        <span id="syncLabel">Connecting...</span>
-        <span style="margin-left:auto;font-size:10px;color:var(--fg3)" id="driverCount"></span>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <button class="tool-btn" onclick="openDebrief()">📋 Debrief</button>
+      <button class="tool-btn" id="syncBtn" onclick="forceRefresh()">☁️ Sync</button>
+      <button class="tool-btn" onclick="openStaples()">🏪 Staples</button>
+      <button class="tool-btn" onclick="openMap()">🗺 Map</button>
+    </div>
+
+    <!-- Sync status -->
+    <div class="hdr-sync">
+      <span class="sync-dot" id="syncDot"></span>
+      <span id="syncLabel">Connecting...</span>
+      <span style="margin-left:auto;font-size:9px;color:var(--fg3)" id="driverCount"></span>
+    </div>
+
+    <!-- Package bar -->
+    <div class="gpb">
+      <div class="gpb-label">
+        <span>Remaining Packages</span>
+        <b id="pkgLabel">— / —</b>
+      </div>
+      <div class="gpb-track">
+        <div class="gpb-fill" id="pkgBar" style="width:0%"></div>
       </div>
     </div>
 
-    <div class="gpb">
-      <div class="gpb-label"><span>Remaining Packages</span><b id="pkgLabel">— / —</b></div>
-      <div class="gpb-track"><div class="gpb-fill" id="pkgBar" style="width:0%"></div></div>
-    </div>
-
+    <!-- Search -->
     <div class="search-wrap">
-      <input class="search-input" id="searchInput" type="text" placeholder="Search driver or route..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      <input class="search-input" id="searchInput" type="text"
+        placeholder="Search driver, route, or vehicle..."
+        autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
     </div>
 
+    <!-- Filter tabs -->
     <div class="filters">
       <div class="filters-row" id="filterTabs"></div>
     </div>
 
-    <div class="view-row">
-      <div class="view-toggle">
-        <button class="vbtn active" id="viewList" onclick="setView('list')">List</button>
-        <button class="vbtn" id="viewCompact" onclick="setView('compact')">Compact</button>
-      </div>
-      <span class="sort-label" id="sortLabel" onclick="cycleSort()">Sort: Route ▼</span>
-    </div>
-
+    <!-- Driver list -->
     <div class="driver-list-wrap" id="listWrap">
       <div class="driver-list" id="driverList">
-        <div class="empty"><div class="spinner"></div><p style="margin-top:12px">Loading fleet data...</p></div>
+        <div class="empty">
+          <div class="spinner"></div>
+          <p style="margin-top:10px">Loading fleet data...</p>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- Station picker -->
+  <!-- ═══ Station Picker ═══ -->
   <div class="station-picker" id="stationPicker">
     <div class="station-picker-card">
-      <h3>Select Station</h3>
+      <h3 style="margin-bottom:12px">Select Station</h3>
       <div id="stationBtns"></div>
-      <button class="hdr-btn" style="margin-top:8px;width:100%;padding:10px" onclick="closeStationPicker()">Cancel</button>
+      <button class="hdr-btn" style="width:100%;padding:10px;margin-top:6px" onclick="closeStationPicker()">Cancel</button>
     </div>
   </div>
 
-  <!-- Driver modal -->
+  <!-- ═══ Driver Modal ═══ -->
   <div class="modal-bg" id="driverModal" onclick="if(event.target===this)closeModal()">
     <div class="modal-card" id="modalContent"></div>
   </div>
 
-  <!-- Map overlay -->
+  <!-- ═══ Map Overlay ═══ -->
   <div class="map-overlay" id="mapOverlay">
     <div class="map-hdr">
       <button class="hdr-btn" onclick="closeMap()">← Back</button>
       <span style="font-weight:700;color:var(--green)">Fleet Map</span>
-      <span id="mapCount" style="font-size:11px;color:var(--fg3)"></span>
+      <span id="mapCount" style="font-size:10px;color:var(--fg3)"></span>
     </div>
     <div id="mapContainer"></div>
   </div>
+
+  <!-- ═══ Debrief Overlay ═══ -->
+  <div class="debrief-overlay" id="debriefOverlay">
+    <div class="debrief-hdr">
+      <button class="hdr-btn" onclick="closeDebrief()">← Back</button>
+      <span style="font-weight:700;color:var(--green)">📋 Morning Debrief</span>
+      <button class="hdr-btn" onclick="saveDebriefToCloud()" id="debriefSaveBtn">💾 Save</button>
+    </div>
+    <div class="debrief-body" id="debriefBody">
+      <p style="font-size:11px;color:var(--fg2);margin-bottom:8px">Paste or edit the morning debrief below. Saved data syncs with desktop.</p>
+      <textarea class="debrief-textarea" id="debriefText" placeholder="Paste morning debrief here...&#10;&#10;Attendance:&#10;- Driver 1&#10;- Driver 2&#10;&#10;Extra Phones:&#10;- Name (count)&#10;&#10;Sweeper:&#10;- Route info"></textarea>
+      <div id="debriefParsed" style="margin-top:10px"></div>
+      <p style="font-size:8px;color:var(--fg3);text-align:center;margin-top:12px;font-style:italic">Dispatch Radar — By: Andrismar T.</p>
+    </div>
+  </div>
+
+  <!-- ═══ Staples Overlay ═══ -->
+  <div class="staples-overlay" id="staplesOverlay">
+    <div class="debrief-hdr">
+      <button class="hdr-btn" onclick="closeStaples()">← Back</button>
+      <span style="font-weight:700;color:var(--green)">🏪 Staples Report</span>
+      <button class="hdr-btn" onclick="copyStaples()">📋 Copy</button>
+    </div>
+    <div class="debrief-body" id="staplesBody"></div>
+  </div>
+
 </div>
 
+<!-- ═══ JavaScript ═══ -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════
-//  FLEET RADAR MOBILE — Phase 2
+//  DISPATCH RADAR MOBILE — V3.0
+//  By: Andrismar T.
+//  Two-way sync with desktop via cloud command queue
 // ═══════════════════════════════════════════════════════════
 
-const CLOUD_SYNC_URL = 'https://script.google.com/macros/s/AKfycbyh90Qa9FuE_tHyZ9T-rQyOOtwFeZxVt-4iUB_LOtyoupoBU8xp-xPUKCXF1EJrjzPCPQ/exec';
-const STATIONS = ['DJE5','DJZ6','DYY6','DNJ4'];
+// ── Configuration ──
+const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyh90Qa9FuE_tHyZ9T-rQyOOtwFeZxVt-4iUB_LOtyoupoBU8xp-xPUKCXF1EJrjzPCPQ/exec';
+const STATIONS = ['DJE5', 'DJZ6', 'DYY6', 'DNJ4'];
 const REFRESH_MS = 30000;
-const LS_URL = 'fleet_radar_mobile_url';
-const LS_STA = 'fleet_radar_mobile_station';
+const LS_URL = 'dispatch_radar_url';
+const LS_STA = 'dispatch_radar_station';
 
-let cloudUrl = CLOUD_SYNC_URL || localStorage.getItem(LS_URL) || '';
+let cloudUrl = CLOUD_URL || localStorage.getItem(LS_URL) || '';
 let currentStation = localStorage.getItem(LS_STA) || 'DJE5';
 let memory = {};
 let lastFetch = 0;
@@ -236,381 +709,1061 @@ let refreshTimer = null;
 let activeFilter = 'ALL';
 let searchQuery = '';
 let isRefreshing = false;
-let viewMode = 'list'; // list | compact
-let sortMode = 0; // 0=route, 1=stops, 2=pace, 3=behind
-const SORT_LABELS = ['Route','Most Stops','Most Pkgs','Behind First','Pace'];
+let sortMode = 0;
+const SORT_NAMES = ['Route', 'Stops ↓', 'Pkgs ↓', 'Behind', 'Pace'];
 let leafletMap = null;
 let mapMarkers = [];
 
-// ── Boot ──
+// ═══════════════════════
+//  BOOT
+// ═══════════════════════
+
 function boot() {
-  if (!cloudUrl) { show('setup'); hide('main'); return; }
-  hide('setup');
+  if (!cloudUrl) {
+    document.getElementById('setup').style.display = 'flex';
+    document.getElementById('main').style.display = 'none';
+    return;
+  }
+  document.getElementById('setup').style.display = 'none';
   const m = document.getElementById('main');
   m.style.display = 'flex';
   m.style.flexDirection = 'column';
   m.style.flex = '1';
   m.style.overflow = 'hidden';
   m.style.minHeight = '0';
-  document.getElementById('stationLabel').textContent = currentStation;
+  document.getElementById('stationBadge').textContent = currentStation;
   fetchData();
   refreshTimer = setInterval(fetchData, REFRESH_MS);
 }
-function show(id){document.getElementById(id).style.display='flex'}
-function hide(id){document.getElementById(id).style.display='none'}
-function saveSetup(){
-  const url=document.getElementById('setup-url').value.trim();
-  if(!url||!url.startsWith('http')){alert('Enter a valid URL');return}
-  cloudUrl=url; localStorage.setItem(LS_URL,cloudUrl); boot();
+
+function saveSetup() {
+  const url = document.getElementById('setup-url').value.trim();
+  if (!url || !url.startsWith('http')) { alert('Enter a valid URL'); return; }
+  cloudUrl = url;
+  localStorage.setItem(LS_URL, cloudUrl);
+  boot();
 }
 
-// ── Fetch ──
-async function fetchData(){
-  if(isRefreshing)return; isRefreshing=true; setSyncStatus('syncing');
-  try{
-    const r=await fetch(cloudUrl+'?station='+currentStation,{method:'GET',mode:'cors',cache:'no-cache'});
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    const data=await r.json();
-    if(data&&data.drivers){memory=data;lastFetch=Date.now();setSyncStatus('live');render();}
-    else setSyncStatus('empty');
-  }catch(e){console.error('[Mobile]',e);setSyncStatus('error',e.message);if(memory.drivers)render();}
-  isRefreshing=false;
+// ═══════════════════════
+//  DATA FETCHING
+// ═══════════════════════
+
+async function fetchData() {
+  if (isRefreshing) return;
+  isRefreshing = true;
+  setSyncStatus('syncing');
+
+  try {
+    const resp = await fetch(cloudUrl + '?station=' + currentStation, {
+      method: 'GET', mode: 'cors', cache: 'no-cache'
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if (data && data.drivers) {
+      memory = data;
+      lastFetch = Date.now();
+      setSyncStatus('live');
+      render();
+    } else {
+      setSyncStatus('empty');
+    }
+  } catch (e) {
+    console.error('[Dispatch] Fetch error:', e);
+    setSyncStatus('error', e.message);
+    if (memory.drivers) render();
+  }
+
+  isRefreshing = false;
 }
-function forceRefresh(){
-  const b=document.getElementById('refreshBtn');
-  b.style.transform='rotate(360deg)';b.style.transition='transform .5s';
-  setTimeout(()=>{b.style.transform='';b.style.transition=''},600);
+
+function forceRefresh() {
+  const btn = document.getElementById('refreshBtn');
+  btn.style.transform = 'rotate(360deg)';
+  btn.style.transition = 'transform .5s';
+  setTimeout(() => { btn.style.transform = ''; btn.style.transition = ''; }, 600);
   fetchData();
 }
-function setSyncStatus(s,d){
-  const dot=document.getElementById('syncDot'),lbl=document.getElementById('syncLabel');
-  dot.className='sync-dot';
-  if(s==='live'){dot.classList.add('live');lbl.textContent='Synced · '+new Date(lastFetch).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
-  else if(s==='syncing')lbl.textContent='☁️ Syncing...';
-  else if(s==='error'){dot.classList.add('err');lbl.textContent='✗ '+(d||'Offline');}
-  else if(s==='empty')lbl.textContent='⚠ No data';
+
+function setSyncStatus(status, detail) {
+  const dot = document.getElementById('syncDot');
+  const label = document.getElementById('syncLabel');
+  dot.className = 'sync-dot';
+
+  if (status === 'live') {
+    dot.classList.add('live');
+    label.textContent = '● Synced · ' + new Date(lastFetch).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    document.getElementById('syncBtn').classList.add('synced');
+  } else if (status === 'syncing') {
+    label.textContent = '☁️ Syncing...';
+    document.getElementById('syncBtn').classList.remove('synced');
+  } else if (status === 'error') {
+    dot.classList.add('err');
+    label.textContent = '✗ ' + (detail || 'Offline');
+  } else if (status === 'empty') {
+    label.textContent = '⚠ No data for ' + currentStation;
+  }
 }
 
-// ── Station ──
-function openStationPicker(){
+// ═══════════════════════
+//  COMMAND QUEUE (write-back to desktop)
+// ═══════════════════════
+
+async function sendCommand(type, tid, value, extra) {
+  const cmd = { type, tid, value, ts: Date.now() };
+  if (extra) Object.assign(cmd, extra);
+
+  try {
+    await fetch(cloudUrl + '?action=commands&station=' + currentStation, {
+      method: 'POST', mode: 'cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(cmd)
+    });
+    showToast('✓ Command sent');
+  } catch (e) {
+    showToast('✗ Command failed', true);
+  }
+}
+
+function showToast(msg, isError) {
+  const existing = document.querySelector('.toast');
+  if (existing) existing.remove();
+  const t = document.createElement('div');
+  t.className = 'toast';
+  if (isError) {
+    t.style.background = '#7f1d1d';
+    t.style.borderColor = '#ef4444';
+    t.style.color = '#fca5a5';
+  }
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2500);
+}
+
+// ═══════════════════════
+//  STATION PICKER
+// ═══════════════════════
+
+function openStationPicker() {
   document.getElementById('stationPicker').classList.add('open');
-  document.getElementById('stationBtns').innerHTML=STATIONS.map(s=>`<button class="station-btn ${s===currentStation?'current':''}" onclick="selectStation('${s}')">${s}</button>`).join('');
+  document.getElementById('stationBtns').innerHTML = STATIONS.map(s =>
+    `<button class="station-btn ${s === currentStation ? 'current' : ''}" onclick="selectStation('${s}')">${s}</button>`
+  ).join('');
 }
-function closeStationPicker(){document.getElementById('stationPicker').classList.remove('open')}
-function selectStation(s){
-  currentStation=s;localStorage.setItem(LS_STA,s);
-  document.getElementById('stationLabel').textContent=s;
-  closeStationPicker();memory={};
-  document.getElementById('driverList').innerHTML='<div class="empty"><div class="spinner"></div></div>';
+
+function closeStationPicker() {
+  document.getElementById('stationPicker').classList.remove('open');
+}
+
+function selectStation(s) {
+  currentStation = s;
+  localStorage.setItem(LS_STA, s);
+  document.getElementById('stationBadge').textContent = s;
+  closeStationPicker();
+  memory = {};
+  document.getElementById('driverList').innerHTML = '<div class="empty"><div class="spinner"></div></div>';
   fetchData();
 }
 
-// ── Search ──
-document.getElementById('searchInput').addEventListener('input',e=>{searchQuery=e.target.value.toLowerCase().trim();renderDriverList()});
+// ═══════════════════════
+//  SEARCH
+// ═══════════════════════
 
-// ── View & Sort ──
-function setView(v){
-  viewMode=v;
-  document.getElementById('viewList').classList.toggle('active',v==='list');
-  document.getElementById('viewCompact').classList.toggle('active',v==='compact');
+document.getElementById('searchInput').addEventListener('input', (e) => {
+  searchQuery = e.target.value.toLowerCase().trim();
+  renderDriverList();
+});
+
+// ═══════════════════════
+//  HELPERS
+// ═══════════════════════
+
+function fmt(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  return isNaN(d) ? '—' : d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+function formatPhone(phone) {
+  if (!phone || phone === 'N/A') return 'N/A';
+  const clean = String(phone).replace(/[^\d+]/g, '');
+  if (clean.length === 10) return `(${clean.slice(0,3)}) ${clean.slice(3,6)}-${clean.slice(6)}`;
+  if (clean.length === 11 && clean[0] === '1') return `(${clean.slice(1,4)}) ${clean.slice(4,7)}-${clean.slice(7)}`;
+  return phone;
+}
+
+function isActive(d) {
+  if (!d.firstSeen) return (d.stopsCompleted || 0) > 0 || d.firstDeliveryTime;
+  const n = new Date(), s = new Date(n);
+  s.setHours(2, 0, 0, 0);
+  if (n.getHours() < 2) s.setDate(s.getDate() - 1);
+  return d.firstSeen >= s.getTime() || (d.stopsCompleted || 0) > 0 || d.firstDeliveryTime;
+}
+
+function abbr(name) {
+  if (!name) return '';
+  const p = name.trim().split(/\s+/);
+  return p.length >= 3 ? p.slice(0, 2).join(' ') + ' ' + p[2][0] + '.' : name;
+}
+
+function rem(d) {
+  return (d.inspectionDone || d.manuallyDelivered) ? 0 : Math.max(0, (d.stopsTotal || 0) - (d.stopsCompleted || 0) - (d.missing || 0) - (d.returns || 0));
+}
+
+function remPkg(d) {
+  return (d.inspectionDone || d.manuallyDelivered) ? 0 : Math.max(0, (d.remainingPkgs || 0) - (d.returns || 0) - (d.missing || 0));
+}
+
+function pct(d) {
+  return (d.stopsTotal || 0) > 0 ? Math.min(100, (d.stopsCompleted || 0) / (d.stopsTotal || 1) * 100) : 0;
+}
+
+function stateColor(state, d) {
+  if (d && d.inspectionDone) return '#22c55e';
+  if (d && !d.inspectionDone && (d.progressStatus === 'BEHIND' || d.progressStatus === 'AT_RISK') && state !== 'FINISHED') return '#ef4444';
+  const map = {
+    'INACTIVE': '#f59e0b', 'ON BREAK': '#3b82f6', 'FINISHED': '#10b981',
+    'AT STATION': '#818cf8', 'GETTING GAS': '#f59e0b', 'DEPARTED': '#06b6d4',
+    'EN ROUTE': '#8b5cf6', 'MOVING': '#10b981'
+  };
+  return map[state] || '#10b981';
+}
+
+function gpsDot(d) {
+  const rd = d.lastDeliveryTime && (Date.now() - d.lastDeliveryTime) < 600000;
+  const idle = d.state === 'INACTIVE' || (d.currentInactiveStart && (Date.now() - d.currentInactiveStart) >= 600000);
+  let c, sh = '';
+  if (d.gpsMoving && !d.gpsAtStation && !d.gpsDeparted) { c = '#10b981'; sh = '0 0 0 2px #10b98155'; }
+  else if (d.gpsDeparted) { c = '#06b6d4'; sh = '0 0 0 2px #06b6d455'; }
+  else if (rd && !idle) { c = '#3b82f6'; sh = '0 0 0 2px #3b82f655'; }
+  else if (idle) { c = '#f59e0b'; sh = '0 0 0 2px #f59e0b55'; }
+  else if (d.gpsAtStation) { c = '#818cf8'; }
+  else { c = '#6b7280'; }
+  return `<span class="gps-dot" style="background:${c};${sh ? 'box-shadow:' + sh : ''}"></span>`;
+}
+
+function dispState(d) {
+  if (d.isSweeper) {
+    const ns = (d.stopsTotal || 0) > 0 && (d.stopsCompleted || 0) > 0 && rem(d) === 0;
+    if (d.state === 'ON BREAK') return ns ? '✅ AVAILABLE' : '☕ ON BREAK';
+    if (ns && d.gpsAtStation) return '✅ FINISHED';
+    if (ns) return '✅ AVAILABLE';
+    return '🔄 BUSY';
+  }
+  if (d.isFlexRoute) {
+    if (rem(d) === 0 || (d.remainingPkgs || 0) === 0) return '✅ FINISHED';
+    if (d.state === 'ON BREAK') return '☕ ON BREAK';
+    return '🔄 BUSY';
+  }
+  if (d.isHelper) {
+    if (d.state === 'ON BREAK') return '☕ ON BREAK';
+    return rem(d) === 0 ? '✅ DONE' : 'HELPING';
+  }
+  if (d.state === 'AT STATION' && d.gpsAtStation && d.firstDeliveryTime && (d.stopsCompleted || 0) > 0 && (d.stopsTotal || 0) > 0 && rem(d) === 0) return 'FINISHED';
+  if (d.state === 'FINISHED' && (!d.firstDeliveryTime || (d.stopsCompleted || 0) === 0)) return 'AT STATION';
+  if (d.state === 'GETTING GAS') return '⛽ Getting Gas';
+  return d.state || 'UNKNOWN';
+}
+
+function cardStyle(d) {
+  if (d.isRemoved) return 'border-left:4px solid #4b5563;opacity:.5;';
+  if (d.inspectionDone) return 'background:linear-gradient(145deg,#0d3d22,#072918);border-left:4px solid #2CC871;';
+  if (d.state === 'ON BREAK' && !d.isSweeper && !d.isFlexRoute && !d.isHelper) return 'background:linear-gradient(145deg,#1e40af,#1e3a8a);border-left:4px solid #3b82f6;';
+  if (d.state === 'GETTING GAS') return 'background:linear-gradient(145deg,#78350f,#451a03);border-left:4px solid #f59e0b;';
+  if (d.isSweeper) {
+    const ns = (d.stopsTotal || 0) > 0 && (d.stopsCompleted || 0) > 0 && rem(d) === 0;
+    if (ns && d.gpsAtStation) return 'background:linear-gradient(145deg,#374151,#1f2937);border-left:4px solid #6b7280;';
+    if (d.state === 'ON BREAK') return 'background:linear-gradient(145deg,#1e40af,#1e3a8a);border-left:4px solid #3b82f6;';
+    if (ns) return 'background:linear-gradient(145deg,#065f46,#064e3b);border-left:4px solid #10b981;';
+    return 'background:linear-gradient(145deg,#853b12,#5c2709);border-left:4px solid #fb923c;';
+  }
+  if (d.isFlexRoute) return 'background:linear-gradient(145deg,#581c87,#3b0764);border-left:4px solid #a855f7;';
+  if (d.isHelper) {
+    if (d.state === 'ON BREAK') return 'background:linear-gradient(145deg,#1e40af,#1e3a8a);border-left:4px solid #3b82f6;';
+    return 'background:linear-gradient(145deg,#1e3a5f,#162d4a);border-left:4px solid #60a5fa;';
+  }
+  if (d.hasExtraPhone) return 'border-left:4px solid #f97316;background:linear-gradient(to right,#1c1208,transparent 60%);';
+  const c = stateColor(d.state, d);
+  return `border-left:4px solid ${c};`;
+}
+
+// ═══════════════════════
+//  DATA GETTERS
+// ═══════════════════════
+
+function getRaw() {
+  return Object.entries(memory.drivers || {}).map(([id, d]) => ({ id, ...d }))
+    .filter(d => !d.isGhost && !d.isRemoved && !d.isBaseline && !(d.state === 'FINISHED' && !isActive(d)));
+}
+
+function getRemoved() {
+  return Object.entries(memory.drivers || {}).map(([id, d]) => ({ id, ...d }))
+    .filter(d => d.isRemoved && !d._staleHidden && !d.isBaseline);
+}
+
+function getFiltered(filter) {
+  const raw = getRaw();
+  const act = raw.filter(d => d.state !== 'FINISHED');
+  switch (filter) {
+    case 'ALL': return raw;
+    case 'ON_BREAK': return act.filter(d => d.state === 'ON BREAK');
+    case 'NO_BREAKS': return raw.filter(d => d.hasNoBreaks);
+    case 'INACTIVE': return act.filter(d => d.state === 'INACTIVE');
+    case 'BEHIND': return act.filter(d => d.progressStatus === 'BEHIND' || d.progressStatus === 'AT_RISK');
+    case 'RETURNS': return raw.filter(d => (d.returns || 0) > 0 || (d.returnedTbas && d.returnedTbas.length > 0));
+    case 'MISSING': return [...raw.filter(d => (d.missing || 0) > 0), ...getRemoved()];
+    case 'COMPLETED': return raw.filter(d => d.state === 'FINISHED' && isActive(d));
+    case 'HELPING': return raw.filter(d => d.isHelper);
+    case 'GOT_GAS': return raw.filter(d => d.gotGas);
+    default: return raw;
+  }
+}
+
+function getCounts() {
+  const raw = getRaw();
+  const act = raw.filter(d => d.state !== 'FINISHED');
+  const ret = Object.values(memory.drivers || {}).reduce((s, d) => s + (d.returnedTbas && d.returnedTbas.length ? d.returnedTbas.length : 0), 0);
+  return {
+    ALL: raw.length,
+    ON_BREAK: act.filter(d => d.state === 'ON BREAK').length,
+    NO_BREAKS: raw.filter(d => d.hasNoBreaks).length,
+    INACTIVE: act.filter(d => d.state === 'INACTIVE').length,
+    BEHIND: act.filter(d => d.progressStatus === 'BEHIND' || d.progressStatus === 'AT_RISK').length,
+    RETURNS: ret,
+    MISSING: raw.filter(d => (d.missing || 0) > 0).length + getRemoved().length,
+    COMPLETED: raw.filter(d => d.state === 'FINISHED' && isActive(d)).length,
+    HELPING: raw.filter(d => d.isHelper).length,
+    GOT_GAS: raw.filter(d => d.gotGas).length
+  };
+}
+
+// ═══════════════════════
+//  RENDER
+// ═══════════════════════
+
+function render() {
+  renderGlobalBar();
+  renderFilters();
+  renderDriverList();
+  document.getElementById('driverCount').textContent = getRaw().length + ' drivers';
+}
+
+function renderGlobalBar() {
+  const drivers = getRaw();
+  let r = 0, t = 0;
+  drivers.forEach(d => {
+    const del = Math.max(0, (d.remainingPkgs || 0) - (d.returns || 0) - (d.missing || 0));
+    r += d.state === 'FINISHED' ? 0 : del;
+    t += Math.max(d.totalPkgs || 0, d.remainingPkgs || 0);
+  });
+  const p = t > 0 ? Math.min(100, Math.max(0, ((t - r) / t) * 100)) : (t === 0 ? 100 : 0);
+  document.getElementById('pkgLabel').textContent = r.toLocaleString() + ' / ' + t.toLocaleString();
+  const bar = document.getElementById('pkgBar');
+  bar.style.width = p + '%';
+  bar.className = 'gpb-fill' + (t > 0 && r > 0 ? ' animated' : '');
+}
+
+function renderFilters() {
+  const c = getCounts();
+  const defs = [
+    { id: 'ALL', l: 'All', c: c.ALL },
+    { id: 'ON_BREAK', l: '☕ Break', c: c.ON_BREAK },
+    { id: 'NO_BREAKS', l: '⏰ No Brk', c: c.NO_BREAKS },
+    { id: 'INACTIVE', l: '⏸ Idle', c: c.INACTIVE },
+    { id: 'BEHIND', l: '⚠ Behind', c: c.BEHIND },
+    { id: 'RETURNS', l: '↩ Returns', c: c.RETURNS },
+    { id: 'MISSING', l: '👁 Missing', c: c.MISSING },
+    { id: 'COMPLETED', l: '✓ Done', c: c.COMPLETED },
+    { id: 'HELPING', l: '🤝 Help', c: c.HELPING },
+    { id: 'GOT_GAS', l: '⛽ Gas', c: c.GOT_GAS },
+  ];
+  document.getElementById('filterTabs').innerHTML = defs.map(f =>
+    `<button class="fbtn ${activeFilter === f.id ? 'active' : ''}" onclick="setFilter('${f.id}')">${f.l} (${f.c})</button>`
+  ).join('');
+}
+
+function setFilter(f) {
+  activeFilter = f;
+  renderFilters();
   renderDriverList();
 }
-function cycleSort(){sortMode=(sortMode+1)%SORT_LABELS.length;document.getElementById('sortLabel').textContent='Sort: '+SORT_LABELS[sortMode]+' ▼';renderDriverList();}
 
-// ── Helpers ──
-function fmt(ts){if(!ts)return'—';const d=new Date(ts);return isNaN(d)?'—':d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true})}
-function isActive(d){if(!d.firstSeen)return(d.stopsCompleted||0)>0||d.firstDeliveryTime;const n=new Date(),s=new Date(n);s.setHours(2,0,0,0);if(n.getHours()<2)s.setDate(s.getDate()-1);return d.firstSeen>=s.getTime()||(d.stopsCompleted||0)>0||d.firstDeliveryTime}
-function abbr(name){if(!name)return'';const p=name.trim().split(/\s+/);return p.length>=3?p.slice(0,2).join(' ')+' '+p[2][0]+'.':name}
-function rem(d){return(d.inspectionDone||d.manuallyDelivered)?0:Math.max(0,(d.stopsTotal||0)-(d.stopsCompleted||0)-(d.missing||0)-(d.returns||0))}
-function remPkg(d){return(d.inspectionDone||d.manuallyDelivered)?0:Math.max(0,(d.remainingPkgs||0)-(d.returns||0)-(d.missing||0))}
-function pct(d){return(d.stopsTotal||0)>0?Math.min(100,(d.stopsCompleted||0)/(d.stopsTotal||1)*100):0}
+function renderDriverList() {
+  let drivers = getFiltered(activeFilter);
 
-function sc(state,d){
-  if(d&&d.inspectionDone)return'#22c55e';
-  if(d&&!d.inspectionDone&&(d.progressStatus==='BEHIND'||d.progressStatus==='AT_RISK')&&state!=='FINISHED')return'#ef4444';
-  const m={'INACTIVE':'#f59e0b','ON BREAK':'#3b82f6','FINISHED':'#10b981','AT STATION':'#818cf8','GETTING GAS':'#f59e0b','DEPARTED':'#06b6d4','EN ROUTE':'#8b5cf6'};
-  return m[state]||'#10b981';
-}
-
-function gpsDot(d){
-  const rd=d.lastDeliveryTime&&(Date.now()-d.lastDeliveryTime)<600000;
-  const idle=d.state==='INACTIVE'||(d.currentInactiveStart&&(Date.now()-d.currentInactiveStart)>=600000);
-  let c,sh='';
-  if(d.gpsMoving&&!d.gpsAtStation&&!d.gpsDeparted){c='#10b981';sh='0 0 0 2px #10b98155';}
-  else if(d.gpsDeparted){c='#06b6d4';sh='0 0 0 2px #06b6d455';}
-  else if(rd&&!idle){c='#3b82f6';sh='0 0 0 2px #3b82f655';}
-  else if(idle){c='#f59e0b';sh='0 0 0 2px #f59e0b55';}
-  else if(d.gpsAtStation)c='#818cf8';
-  else c='#6b7280';
-  return `<span class="gps-dot" style="background:${c};${sh?'box-shadow:'+sh:''}"></span>`;
-}
-
-function dispState(d){
-  if(d.isSweeper){
-    const ns=(d.stopsTotal||0)>0&&(d.stopsCompleted||0)>0&&rem(d)===0;
-    if(d.state==='ON BREAK')return ns?'✅ AVAILABLE':'☕ ON BREAK';
-    if(ns&&d.gpsAtStation)return'✅ FINISHED';if(ns)return'✅ AVAILABLE';return'🔄 BUSY';
+  // Search
+  if (searchQuery) {
+    drivers = drivers.filter(d =>
+      (d.name || '').toLowerCase().includes(searchQuery) ||
+      (d.route || '').toLowerCase().includes(searchQuery) ||
+      (d.vehicleId || '').toLowerCase().includes(searchQuery)
+    );
   }
-  if(d.isFlexRoute){if(rem(d)===0||(d.remainingPkgs||0)===0)return'✅ FINISHED';if(d.state==='ON BREAK')return'☕ ON BREAK';return'🔄 BUSY';}
-  if(d.isHelper){if(d.state==='ON BREAK')return'☕ ON BREAK';return rem(d)===0?'✅ DONE':'HELPING';}
-  if(d.state==='AT STATION'&&d.gpsAtStation&&d.firstDeliveryTime&&(d.stopsCompleted||0)>0&&(d.stopsTotal||0)>0&&rem(d)===0)return'FINISHED';
-  if(d.state==='FINISHED'&&(!d.firstDeliveryTime||(d.stopsCompleted||0)===0))return'AT STATION';
-  if(d.state==='GETTING GAS')return'⛽ Getting Gas';
-  return d.state||'UNKNOWN';
-}
-
-function cardStyle(d){
-  const c=sc(d.state,d);
-  if(d.isRemoved)return'border-left:4px solid #4b5563;opacity:.5;';
-  if(d.inspectionDone)return'background:linear-gradient(145deg,#0d3d22,#072918);border-left:4px solid #2CC871;';
-  if(d.state==='ON BREAK'&&!d.isSweeper&&!d.isFlexRoute&&!d.isHelper)return'background:linear-gradient(145deg,#1e40af,#1e3a8a);border-left:4px solid #3b82f6;';
-  if(d.state==='GETTING GAS')return'background:linear-gradient(145deg,#78350f,#451a03);border-left:4px solid #f59e0b;';
-  if(d.isSweeper){const ns=(d.stopsTotal||0)>0&&(d.stopsCompleted||0)>0&&rem(d)===0;if(ns&&d.gpsAtStation)return'background:linear-gradient(145deg,#374151,#1f2937);border-left:4px solid #6b7280;';if(d.state==='ON BREAK')return'background:linear-gradient(145deg,#1e40af,#1e3a8a);border-left:4px solid #3b82f6;';if(ns)return'background:linear-gradient(145deg,#065f46,#064e3b);border-left:4px solid #10b981;';return'background:linear-gradient(145deg,#853b12,#5c2709);border-left:4px solid #fb923c;';}
-  if(d.isFlexRoute)return'background:linear-gradient(145deg,#581c87,#3b0764);border-left:4px solid #a855f7;';
-  if(d.isHelper){if(d.state==='ON BREAK')return'background:linear-gradient(145deg,#1e40af,#1e3a8a);border-left:4px solid #3b82f6;';return'background:linear-gradient(145deg,#1e3a5f,#162d4a);border-left:4px solid #60a5fa;';}
-  if(d.hasExtraPhone)return'border-left:4px solid #f97316;background:linear-gradient(to right,#1c1208,transparent 60%);';
-  return`border-left:4px solid ${c};`;
-}
-
-// ── Get drivers ──
-function getRaw(){return Object.entries(memory.drivers||{}).map(([id,d])=>({id,...d})).filter(d=>!d.isGhost&&!d.isRemoved&&!d.isBaseline&&!(d.state==='FINISHED'&&!isActive(d)))}
-function getRemoved(){return Object.entries(memory.drivers||{}).map(([id,d])=>({id,...d})).filter(d=>d.isRemoved&&!d._staleHidden&&!d.isBaseline)}
-
-function getFiltered(f){
-  const raw=getRaw(),act=raw.filter(d=>d.state!=='FINISHED');
-  switch(f){
-    case'ALL':return raw;
-    case'ON_BREAK':return act.filter(d=>d.state==='ON BREAK');
-    case'NO_BREAKS':return raw.filter(d=>d.hasNoBreaks);
-    case'INACTIVE':return act.filter(d=>d.state==='INACTIVE');
-    case'BEHIND':return act.filter(d=>d.progressStatus==='BEHIND'||d.progressStatus==='AT_RISK');
-    case'RETURNS':return raw.filter(d=>(d.returns||0)>0||(d.returnedTbas&&d.returnedTbas.length>0));
-    case'MISSING':return[...raw.filter(d=>(d.missing||0)>0),...getRemoved()];
-    case'COMPLETED':return raw.filter(d=>d.state==='FINISHED'&&isActive(d));
-    case'HELPING':return raw.filter(d=>d.isHelper);
-    case'GOT_GAS':return raw.filter(d=>d.gotGas);
-    default:return raw;
-  }
-}
-
-function getCounts(){
-  const raw=getRaw(),act=raw.filter(d=>d.state!=='FINISHED');
-  const ret=Object.values(memory.drivers||{}).reduce((s,d)=>s+(d.returnedTbas&&d.returnedTbas.length?d.returnedTbas.length:0),0);
-  return{ALL:raw.length,ON_BREAK:act.filter(d=>d.state==='ON BREAK').length,NO_BREAKS:raw.filter(d=>d.hasNoBreaks).length,INACTIVE:act.filter(d=>d.state==='INACTIVE').length,BEHIND:act.filter(d=>d.progressStatus==='BEHIND'||d.progressStatus==='AT_RISK').length,RETURNS:ret,MISSING:raw.filter(d=>(d.missing||0)>0).length+getRemoved().length,COMPLETED:raw.filter(d=>d.state==='FINISHED'&&isActive(d)).length,HELPING:raw.filter(d=>d.isHelper).length,GOT_GAS:raw.filter(d=>d.gotGas).length};
-}
-
-// ── Render ──
-function render(){renderGlobalBar();renderFilters();renderDriverList();document.getElementById('driverCount').textContent=getRaw().length+' drivers';}
-
-function renderGlobalBar(){
-  const drivers=getRaw();let r=0,t=0;
-  drivers.forEach(d=>{const dl=Math.max(0,(d.remainingPkgs||0)-(d.returns||0)-(d.missing||0));r+=d.state==='FINISHED'?0:dl;t+=Math.max(d.totalPkgs||0,d.remainingPkgs||0);});
-  const p=t>0?Math.min(100,Math.max(0,((t-r)/t)*100)):(t===0?100:0);
-  document.getElementById('pkgLabel').textContent=r.toLocaleString()+' / '+t.toLocaleString();
-  const bar=document.getElementById('pkgBar');bar.style.width=p+'%';bar.className='gpb-fill'+(t>0&&r>0?' animated':'');
-}
-
-function renderFilters(){
-  const c=getCounts();
-  const defs=[
-    {id:'ALL',l:'All',c:c.ALL},{id:'ON_BREAK',l:'☕ Break',c:c.ON_BREAK},{id:'NO_BREAKS',l:'⏰ No Brk',c:c.NO_BREAKS},
-    {id:'INACTIVE',l:'⏸ Idle',c:c.INACTIVE},{id:'BEHIND',l:'⚠ Behind',c:c.BEHIND},{id:'RETURNS',l:'↩ Returns',c:c.RETURNS},
-    {id:'MISSING',l:'👁 Missing',c:c.MISSING},{id:'COMPLETED',l:'✓ Done',c:c.COMPLETED},{id:'HELPING',l:'🤝 Help',c:c.HELPING},
-    {id:'GOT_GAS',l:'⛽ Gas',c:c.GOT_GAS},
-  ];
-  document.getElementById('filterTabs').innerHTML=defs.map(f=>`<button class="fbtn ${activeFilter===f.id?'active':''}" onclick="setFilter('${f.id}')">${f.l} (${f.c})</button>`).join('');
-}
-
-function setFilter(f){activeFilter=f;renderFilters();renderDriverList();}
-
-function renderDriverList(){
-  let drivers=getFiltered(activeFilter);
-  if(searchQuery)drivers=drivers.filter(d=>(d.name||'').toLowerCase().includes(searchQuery)||(d.route||'').toLowerCase().includes(searchQuery));
 
   // Sort
-  drivers.sort((a,b)=>{
-    if(a.isPinned&&!b.isPinned)return-1;if(!a.isPinned&&b.isPinned)return 1;
-    if(a.isSweeper&&!b.isSweeper)return-1;if(!a.isSweeper&&b.isSweeper)return 1;
-    switch(sortMode){
-      case 1:return rem(b)-rem(a);
-      case 2:return remPkg(b)-remPkg(a);
-      case 3:{const aB=(a.progressStatus==='BEHIND'||a.progressStatus==='AT_RISK')?1:0;const bB=(b.progressStatus==='BEHIND'||b.progressStatus==='AT_RISK')?1:0;return bB-aB;}
-      case 4:return(b.pace||'—').localeCompare(a.pace||'—');
-      default:return(a.route||'').localeCompare(b.route||'');
+  drivers.sort((a, b) => {
+    if (a.isPinned && !b.isPinned) return -1;
+    if (!a.isPinned && b.isPinned) return 1;
+    if (a.isSweeper && !b.isSweeper) return -1;
+    if (!a.isSweeper && b.isSweeper) return 1;
+    switch (sortMode) {
+      case 1: return rem(b) - rem(a);
+      case 2: return remPkg(b) - remPkg(a);
+      case 3: {
+        const aB = (a.progressStatus === 'BEHIND' || a.progressStatus === 'AT_RISK') ? 1 : 0;
+        const bB = (b.progressStatus === 'BEHIND' || b.progressStatus === 'AT_RISK') ? 1 : 0;
+        return bB - aB;
+      }
+      case 4: return (b.pace || '—').localeCompare(a.pace || '—');
+      default: return (a.route || '').localeCompare(b.route || '');
     }
   });
 
-  const el=document.getElementById('driverList');
-  if(!drivers.length){el.innerHTML=`<div class="empty"><p>${searchQuery?'No match for "'+searchQuery+'"':'No drivers in this filter'}</p></div>`;return;}
-  el.innerHTML=drivers.map(d=>buildCard(d)).join('');
+  const el = document.getElementById('driverList');
+  if (!drivers.length) {
+    el.innerHTML = `<div class="empty"><p>${searchQuery ? 'No match for "' + searchQuery + '"' : 'No drivers in this filter'}</p></div>`;
+    return;
+  }
+  el.innerHTML = drivers.map(d => buildCard(d)).join('');
 }
 
-function buildCard(d){
-  const name=abbr(d.name),st=sc(d.state,d),sR=rem(d),dP=remPkg(d),sp=pct(d),ld=fmt(d.lastDeliveryTime),style=cardStyle(d),state=dispState(d),gd=gpsDot(d),veh=d.vehicleId||'';
-  const pkgTotal=Math.max(d.totalPkgs||0,d.remainingPkgs||0);
+// ═══════════════════════
+//  DRIVER CARD
+// ═══════════════════════
 
-  // No-break warning (after 3:30 PM ET)
-  const now=new Date(new Date().toLocaleString('en-US',{timeZone:'America/New_York'}));
-  const isAfter330=(now.getHours()>15)||(now.getHours()===15&&now.getMinutes()>=30);
-  const noBreakWarn=isAfter330&&d.hasNoBreaks&&!d.inspectionDone&&!d.isRemoved&&d.state!=='ON BREAK'&&d.state!=='FINISHED'&&!d.isSweeper&&!d.isFlexRoute&&!d.isHelper;
+function buildCard(d) {
+  const name = abbr(d.name);
+  const sc = stateColor(d.state, d);
+  const sR = rem(d);
+  const dP = remPkg(d);
+  const sp = pct(d);
+  const ld = fmt(d.lastDeliveryTime);
+  const style = cardStyle(d);
+  const state = dispState(d);
+  const gd = gpsDot(d);
+  const veh = d.vehicleId || '';
+  const pkgTotal = Math.max(d.totalPkgs || 0, d.remainingPkgs || 0);
 
-  // Inspection done compact
-  if(d.inspectionDone&&!d.isRemoved){
-    const label=d.isSweeper?'<span style="color:#fb923c;font-weight:800">🧹 SWP</span>':d.isFlexRoute?'<span style="color:#a855f7;font-weight:800">📦 FLX</span>':`<span style="color:#fff;font-weight:800">${d.route||''}</span>`;
-    const pkgsDone=Math.max(0,pkgTotal-dP);
-    return`<div class="dcard insp-compact" style="${style}" onclick="openModal('${d.id}')"><div style="display:flex;align-items:center;justify-content:space-between;gap:4px"><div style="display:flex;align-items:center;gap:3px;min-width:0;overflow:hidden">${gd}${label}<span style="color:#d1d5db;font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span></div><span class="badge" style="background:#22c55e40;color:#22c55e">${d.inspectionManual?'📋':'✓'} INSP DONE</span></div><div style="display:flex;justify-content:space-between;margin-top:2px"><span style="font-size:10px;color:#e5e7eb;padding-left:18px">${d.stopsCompleted||0} Stops | ${pkgsDone} Pkgs ✅</span><span style="font-size:10px;color:var(--fg3)">${ld}</span></div></div>`;
+  // No-break warning check
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const isAfter330 = (now.getHours() > 15) || (now.getHours() === 15 && now.getMinutes() >= 30);
+  const noBreakWarn = isAfter330 && d.hasNoBreaks && !d.inspectionDone && !d.isRemoved &&
+    d.state !== 'ON BREAK' && d.state !== 'FINISHED' && !d.isSweeper && !d.isFlexRoute && !d.isHelper;
+
+  // Inspection done compact card
+  if (d.inspectionDone && !d.isRemoved) {
+    const label = d.isSweeper ? '<span style="color:#fb923c;font-weight:800">🧹 SWP</span>'
+      : d.isFlexRoute ? '<span style="color:#a855f7;font-weight:800">📦 FLX</span>'
+      : `<span style="color:#fff;font-weight:800">${d.route || ''}</span>`;
+    const pkgsDone = Math.max(0, pkgTotal - dP);
+    return `<div class="dcard" style="${style};padding:5px 8px" onclick="openModal('${d.id}')">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:4px">
+        <div style="display:flex;align-items:center;gap:3px;min-width:0;overflow:hidden">
+          ${gd}${label}
+          <span style="color:#d1d5db;font-size:10px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span>
+        </div>
+        <span class="badge" style="background:#22c55e40;color:#22c55e">${d.inspectionManual ? '📋' : '✓'} INSP DONE</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:2px">
+        <span style="font-size:9px;color:#e5e7eb;padding-left:16px">${d.stopsCompleted || 0} Stops | ${pkgsDone} Pkgs ✅</span>
+        <span style="font-size:9px;color:var(--fg3)">${ld}</span>
+      </div>
+    </div>`;
   }
 
-  // Badges
-  let badges=[];
-  if(d.gpsAtStation&&d.state!=='AT STATION')badges.push(['#818cf840','#818cf8','AT STATION']);
-  if(d._confirmedDeparture&&!d.firstDeliveryTime&&!(d.stopsCompleted||0)&&d.state!=='DEPARTED'&&!d.gpsAtStation&&d.state!=='AT STATION'&&!d.inspectionDone)badges.push(['#06b6d440','#06b6d4','🚗 DEPARTED']);
-  if(d._enteredServiceArea&&d.state!=='EN ROUTE'&&!d.inspectionDone)badges.push(['#8b5cf640','#8b5cf6','📍 EN ROUTE']);
-  if(d.hasExtraPhone)badges.push(['#f9731640','#f97316',`📱 x${d.extraPhoneCount||1}`]);
-  if(d.hasStaplesDebrief&&!d.isFlexRoute)badges.push(['#a78bfa40','#a78bfa','🏪 STAPLES']);
-  if(d._manuallyRescued&&!d.isSweeper&&!d.isHelper)badges.push(['#f59e0b40','#f59e0b','🆘 Swept']);
-  if(noBreakWarn)badges.push(['#f59e0b40','#f59e0b','⚠️ NO BREAK']);
-  if(d.progressStatus==='BEHIND'&&!d.isSweeper&&!d.isFlexRoute&&!d.inspectionDone)badges.push(['#ef444440','#ef4444','BEHIND']);
-  if(d.progressStatus==='AT_RISK'&&!d.isSweeper&&!d.isFlexRoute&&!d.inspectionDone)badges.push(['#ef444440','#ef4444','AT RISK']);
-  if(d.manuallyDelivered&&!d.inspectionDone)badges.push(['#10b98140','#10b981','✅ MANUAL']);
-  if(d.gotGas&&d.state!=='GETTING GAS')badges.push(['#f59e0b40','#fde68a','⛽✅']);
-  if(d.coveredBySweeper&&!d.isSweeper&&!d.isFlexRoute)badges.push(['#fb923c40','#fb923c',`🧹 ${d.coveredBySweeperName||'Sweeper'}`]);
-  if((d.missing||0)>0)badges.push(['#d946ef40','#d946ef',`❓ ${d.missing}`]);
-  if((d.returns||0)>0)badges.push(['#ef444440','#ef4444',`🔙 ${d.returns}`]);
-  if(d.returnedTbas&&d.returnedTbas.length>0)badges.push(['#a78bfa40','#a78bfa',`↩️ ${d.returnedTbas.length}`]);
-  if(d.routeChanged&&d.previousRoutes&&d.previousRoutes.length>0&&!d.isSweeper&&!d.isFlexRoute&&!d.isHelper)badges.push(['#f9731640','#f97316','🔄 Reassigned']);
+  // Collect badges
+  let badges = [];
+  if (d.gpsAtStation && d.state !== 'AT STATION') badges.push(['#818cf840', '#818cf8', 'AT STATION']);
+  if (d._confirmedDeparture && !d.firstDeliveryTime && !(d.stopsCompleted || 0) && d.state !== 'DEPARTED' && !d.gpsAtStation && d.state !== 'AT STATION' && !d.inspectionDone)
+    badges.push(['#06b6d440', '#06b6d4', '🚗 DEPARTED']);
+  if (d._enteredServiceArea && d.state !== 'EN ROUTE' && !d.inspectionDone)
+    badges.push(['#8b5cf640', '#8b5cf6', '📍 EN ROUTE']);
+  if (d.hasExtraPhone) badges.push(['#f9731640', '#f97316', `📱 x${d.extraPhoneCount || 1}`]);
+  if (d.hasStaplesDebrief && !d.isFlexRoute) badges.push(['#a78bfa40', '#a78bfa', '🏪 STAPLES']);
+  if (d._manuallyRescued && !d.isSweeper && !d.isHelper) badges.push(['#f59e0b40', '#f59e0b', '🆘 Swept']);
+  if (noBreakWarn) badges.push(['#f59e0b40', '#f59e0b', '⚠️ NO BREAK']);
+  if (d.progressStatus === 'BEHIND' && !d.isSweeper && !d.isFlexRoute && !d.inspectionDone) badges.push(['#ef444440', '#ef4444', 'BEHIND']);
+  if (d.progressStatus === 'AT_RISK' && !d.isSweeper && !d.isFlexRoute && !d.inspectionDone) badges.push(['#ef444440', '#ef4444', 'AT RISK']);
+  if (d.manuallyDelivered && !d.inspectionDone) badges.push(['#10b98140', '#10b981', '✅ MANUAL']);
+  if (d.gotGas && d.state !== 'GETTING GAS') badges.push(['#f59e0b40', '#fde68a', '⛽✅']);
+  if (d.coveredBySweeper && !d.isSweeper && !d.isFlexRoute) badges.push(['#fb923c40', '#fb923c', `🧹 ${d.coveredBySweeperName || 'Sweeper'}`]);
+  if ((d.missing || 0) > 0) badges.push(['#d946ef40', '#d946ef', `❓ ${d.missing}`]);
+  if ((d.returns || 0) > 0) badges.push(['#ef444440', '#ef4444', `🔙 ${d.returns}`]);
+  if (d.returnedTbas && d.returnedTbas.length > 0) badges.push(['#a78bfa40', '#a78bfa', `↩️ ${d.returnedTbas.length}`]);
+  if (d.routeChanged && d.previousRoutes && d.previousRoutes.length > 0 && !d.isSweeper && !d.isFlexRoute && !d.isHelper)
+    badges.push(['#f9731640', '#f97316', '🔄 Reassigned']);
 
-  const showState=!(d.inspectionDone||(d.state==='ON BREAK'&&!d.isSweeper&&!d.isFlexRoute&&!d.isHelper));
-  let breakBadge='';
-  if(d.state==='ON BREAK'&&!d.isSweeper&&!d.isFlexRoute&&!d.isHelper&&!d.inspectionDone){const m=d.currentBreakStart?Math.floor((Date.now()-d.currentBreakStart)/60000):0;breakBadge=`<span class="badge" style="background:#3b82f640;color:#93c5fd">☕ ON BREAK${m?' ('+m+'m)':''}</span>`;}
-  if((d.isSweeper||d.isFlexRoute||d.isHelper)&&d.state==='ON BREAK'&&d.currentBreakStart){const m=Math.floor((Date.now()-d.currentBreakStart)/60000);breakBadge=`<span class="badge" style="background:#3b82f640;color:#93c5fd">${m}m break</span>`;}
+  const showStateBadge = !(d.inspectionDone || (d.state === 'ON BREAK' && !d.isSweeper && !d.isFlexRoute && !d.isHelper));
+  const stateBg = d.isSweeper || d.isFlexRoute || d.isHelper ? 'rgba(0,0,0,.35)' : sc + '40';
+  const stateFg = d.isSweeper || d.isFlexRoute || d.isHelper ? '#e5e7eb' : sc;
 
-  let idleStr='';
-  if(d.state==='INACTIVE'&&d.currentInactiveStart){const m=Math.floor((Date.now()-d.currentInactiveStart)/60000);if(m>0)idleStr=`<div class="idle-mins">Idle: ${m} mins</div>`;}
+  let breakBadge = '';
+  if (d.state === 'ON BREAK' && !d.inspectionDone) {
+    const mins = d.currentBreakStart ? Math.floor((Date.now() - d.currentBreakStart) / 60000) : 0;
+    breakBadge = `<span class="badge" style="background:#3b82f640;color:#93c5fd">☕ BREAK${mins ? ' (' + mins + 'm)' : ''}</span>`;
+  }
+
+  let idleStr = '';
+  if (d.state === 'INACTIVE' && d.currentInactiveStart) {
+    const mins = Math.floor((Date.now() - d.currentInactiveStart) / 60000);
+    if (mins > 0) idleStr = `<div class="idle-mins">Idle: ${mins} mins</div>`;
+  }
 
   // Route label
   let rl;
-  if(d.isSweeper)rl='<span style="color:#fb923c;font-size:12px;font-weight:800">🧹 SWP</span>';
-  else if(d.isFlexRoute)rl='<span style="color:#a855f7;font-size:12px;font-weight:800">📦 FLX</span>';
-  else rl=`<span class="route">${d.route||'?'}</span>`;
+  if (d.isSweeper) rl = '<span style="color:#fb923c;font-size:11px;font-weight:800">🧹 SWP</span>';
+  else if (d.isFlexRoute) rl = '<span style="color:#a855f7;font-size:11px;font-weight:800">📦 FLX</span>';
+  else rl = `<span class="route">${d.route || '?'}</span>`;
 
   // Multi-route line
-  let routesLine='';
-  if(d.isSweeper&&Array.isArray(d.allRoutes)&&d.allRoutes.length>=2){routesLine=`<div style="font-size:9px;color:#fb923c;margin-top:1px;padding-left:18px">${[...new Set(d.allRoutes.filter(r=>r&&!r.includes(',')))].join(', ')}</div>`;}
-  if(d.isHelper&&!d.isSweeper&&Array.isArray(d.allRoutes)&&d.allRoutes.length>=2){routesLine=`<div style="font-size:9px;color:#60a5fa;margin-top:1px;padding-left:18px">🤝 ${[...new Set(d.allRoutes.filter(r=>r&&!r.includes(',')))].join(', ')}</div>`;}
-
-  const stateBg=d.isSweeper||d.isFlexRoute||d.isHelper?'rgba(0,0,0,.35)':st+'40';
-  const stateFg=d.isSweeper||d.isFlexRoute||d.isHelper?'#e5e7eb':st;
-
-  // Compact vs full
-  if(viewMode==='compact'){
-    return`<div class="dcard" style="${style};padding:5px 8px" onclick="openModal('${d.id}')"><div style="display:flex;justify-content:space-between;align-items:center;gap:4px"><div style="display:flex;align-items:center;gap:3px;min-width:0;overflow:hidden">${gd}${d.isPinned?'📌 ':''}${rl}<span class="dname">${name}</span></div><div style="display:flex;align-items:center;gap:4px"><span class="badge" style="background:${stateBg};color:${stateFg}">${state}</span><span style="font-size:10px;color:var(--fg2)">${sR}s/${dP}p</span></div></div></div>`;
+  let routesLine = '';
+  if (d.isSweeper && Array.isArray(d.allRoutes) && d.allRoutes.length >= 2) {
+    routesLine = `<div style="font-size:8px;color:#fb923c;margin-top:1px;padding-left:16px">${[...new Set(d.allRoutes.filter(r => r && !r.includes(',')))].join(', ')}</div>`;
+  }
+  if (d.isHelper && !d.isSweeper && Array.isArray(d.allRoutes) && d.allRoutes.length >= 2) {
+    routesLine = `<div style="font-size:8px;color:#60a5fa;margin-top:1px;padding-left:16px">🤝 ${[...new Set(d.allRoutes.filter(r => r && !r.includes(',')))].join(', ')}</div>`;
   }
 
-  return`<div class="dcard" style="${style}" onclick="openModal('${d.id}')">
-<div class="dcard-hdr"><div class="dcard-left"><div class="dcard-name">${gd}${d.isPinned?'📌 ':''}${rl}<span class="dname">${name}</span></div>${veh?`<div class="dcard-veh">${veh}</div>`:''}${routesLine}</div><div class="dcard-right"><div class="dcard-bar"><div class="dcard-bar-fill" style="width:${sp}%;background:${st}"></div></div><span class="dcard-time">${ld}</span></div></div>
-<div class="badge-row">${showState?`<span class="badge" style="background:${stateBg};color:${stateFg}">${state}</span>`:''}${breakBadge}${badges.map(b=>`<span class="badge" style="background:${b[0]};color:${b[1]}">${b[2]}</span>`).join('')}</div>
-${idleStr}
-<div class="dcard-stats"><span class="stat">Pace:<b>${d.pace||'—'}</b></span><span class="sep">|</span><span class="stat">Stops:<b>${sR}</b></span><span class="sep">|</span><span class="stat">Pkgs:<b>${dP}</b></span><span class="sep">|</span><span class="stat">Done:<b>${d.stopsCompleted||0}/${d.stopsTotal||0}</b></span></div>
-</div>`;
+  return `<div class="dcard" style="${style}" onclick="openModal('${d.id}')">
+    <div class="dcard-hdr">
+      <div class="dcard-left">
+        <div class="dcard-name">
+          ${gd}${d.isPinned ? '📌 ' : ''}${rl}
+          <span class="dname">${name}</span>
+        </div>
+        ${veh ? `<div class="dcard-veh">${veh}</div>` : ''}
+        ${routesLine}
+      </div>
+      <div class="dcard-right">
+        <div class="dcard-bar"><div class="dcard-bar-fill" style="width:${sp}%;background:${sc}"></div></div>
+        <span class="dcard-time">${ld}</span>
+      </div>
+    </div>
+    <div class="badge-row">
+      ${showStateBadge ? `<span class="badge" style="background:${stateBg};color:${stateFg}">${state}</span>` : ''}
+      ${breakBadge}
+      ${badges.map(b => `<span class="badge" style="background:${b[0]};color:${b[1]}">${b[2]}</span>`).join('')}
+    </div>
+    ${idleStr}
+    <div class="dcard-stats">
+      <span class="stat">Pace:<b>${d.pace || '—'}</b></span>
+      <span class="sep">|</span>
+      <span class="stat">Stops:<b>${sR}</b></span>
+      <span class="sep">|</span>
+      <span class="stat">Pkgs:<b>${dP}</b></span>
+      <span class="sep">|</span>
+      <span class="stat">Done:<b>${d.stopsCompleted || 0}/${d.stopsTotal || 0}</b></span>
+    </div>
+  </div>`;
 }
 
-// ── Driver Modal ──
-function openModal(tid){
-  const d=memory.drivers&&memory.drivers[tid];if(!d)return;
-  const name=abbr(d.name),sR=rem(d),dP=remPkg(d),sp=pct(d),c=sc(d.state,d),state=dispState(d);
-  const pkgT=Math.max(d.totalPkgs||0,d.remainingPkgs||0),pkgDone=Math.max(0,pkgT-dP);
+// ═══════════════════════
+//  DRIVER MODAL (Full)
+// ═══════════════════════
 
-  let breakHtml='';
-  if(d.breakHistory&&d.breakHistory.length>0){breakHtml=`<div style="margin-top:10px"><div style="font-weight:700;font-size:11px;color:var(--fg2);margin-bottom:4px">☕ Breaks (${d.breakHistory.length})</div>`;d.breakHistory.forEach((b,i)=>{const dur=b.duration?Math.floor(b.duration/60000):'?';breakHtml+=`<div style="font-size:10px;color:#93c5fd;padding:2px 0;border-bottom:1px solid var(--bg3)">#${i+1}: ${fmt(b.start)} → ${fmt(b.end)} (${dur}m)</div>`;});breakHtml+='</div>';}
+function openModal(tid) {
+  const d = memory.drivers && memory.drivers[tid];
+  if (!d) return;
 
-  let inactHtml='';
-  if(d.inactivityLog&&d.inactivityLog.length>0){inactHtml=`<div style="margin-top:10px"><div style="font-weight:700;font-size:11px;color:var(--fg2);margin-bottom:4px">⏸ Inactivity (${d.inactivityLog.length})</div>`;d.inactivityLog.forEach(l=>{inactHtml+=`<div style="font-size:10px;color:#f59e0b;padding:2px 0;border-bottom:1px solid var(--bg3)">${fmt(l.start)} — ${l.duration}m</div>`;});inactHtml+='</div>';}
+  const name = d.name || '—';
+  const displayName = abbr(name);
+  const sR = rem(d);
+  const dP = remPkg(d);
+  const sp = pct(d);
+  const c = stateColor(d.state, d);
+  const state = dispState(d);
+  const pkgT = Math.max(d.totalPkgs || 0, d.remainingPkgs || 0);
+  const pkgDone = Math.max(0, pkgT - dP);
 
-  let routesHtml='';
-  if(d.allRoutes&&d.allRoutes.length>=2){routesHtml=`<div class="info-box" style="grid-column:span 2"><span class="label">${d.isSweeper?'Sweeper':'All'} Routes</span><div class="val" style="font-size:12px;color:#fb923c">${[...new Set(d.allRoutes)].join(', ')}</div></div>`;}
+  // Phone numbers
+  const workPhone = d.phone || 'N/A';
 
-  // GPS location link
-  let gpsLink='';
-  if(d.lat&&d.lon&&Number.isFinite(d.lat)&&Number.isFinite(d.lon)){gpsLink=`<a href="https://maps.apple.com/?ll=${d.lat},${d.lon}&q=${encodeURIComponent(d.name||'Driver')}" target="_blank" style="display:block;background:var(--bg2);padding:8px;border-radius:6px;text-align:center;color:var(--blue);font-weight:600;font-size:12px;text-decoration:none;margin-bottom:8px;border:1px solid var(--bg3)">📍 Open in Maps (${d.lat.toFixed(4)}, ${d.lon.toFixed(4)})</a>`;}
+  // GPS link
+  let gpsHtml = '';
+  if (d.lat && d.lon && Number.isFinite(d.lat) && Number.isFinite(d.lon)) {
+    gpsHtml = `<a href="https://maps.apple.com/?ll=${d.lat},${d.lon}&q=${encodeURIComponent(name)}" target="_blank"
+      style="display:block;background:var(--bg2);padding:7px;border-radius:6px;text-align:center;color:var(--blue);font-weight:600;font-size:11px;text-decoration:none;margin-bottom:6px;border:1px solid var(--bg3)">
+      📍 Open in Maps (${d.lat.toFixed(4)}, ${d.lon.toFixed(4)})</a>`;
+  }
 
-  document.getElementById('modalContent').innerHTML=`
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-  <h3 style="font-size:15px;display:flex;align-items:center;gap:5px">${gpsDot(d)}<span style="color:${c};font-weight:800">${d.route||'?'}</span> ${name}</h3>
-  <button class="modal-close" onclick="closeModal()">✕</button>
-</div>
-<div class="info-grid">
-  <div class="info-box" style="text-align:center"><span class="label">Status</span><div class="val" style="color:${c}">${state}</div></div>
-  <div class="info-box" style="text-align:center"><span class="label">Pace</span><div class="val">${d.pace||'—'}</div></div>
-</div>
-<div style="background:var(--bg2);padding:8px;border-radius:7px;margin-bottom:8px">
-  <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--fg2);margin-bottom:3px"><span>Progress</span><span style="color:#fff;font-weight:700">${Math.round(sp)}%</span></div>
-  <div style="background:var(--bg3);height:7px;border-radius:4px;overflow:hidden"><div style="width:${sp}%;height:100%;background:${c};border-radius:4px"></div></div>
-</div>
-<div class="info-grid tri">
-  <div class="info-box" style="text-align:center"><span class="label">Remaining</span><div class="val">${sR}</div><span class="label">stops</span></div>
-  <div class="info-box" style="text-align:center"><span class="label">Delivered</span><div class="val" style="color:var(--green)">${d.stopsCompleted||0}</div><span class="label">of ${d.stopsTotal||0}</span></div>
-  <div class="info-box" style="text-align:center"><span class="label">Packages</span><div class="val">${dP}</div><span class="label">of ${pkgT}</span></div>
-</div>
-<div class="info-grid">
-  <div class="info-box"><span class="label">Vehicle</span><div class="val" style="font-size:12px">${d.vehicleId||'—'}</div></div>
-  <div class="info-box"><span class="label">Last Delivery</span><div class="val" style="font-size:12px">${fmt(d.lastDeliveryTime)}</div></div>
-  <div class="info-box"><span class="label">First Delivery</span><div class="val" style="font-size:12px">${fmt(d.firstDeliveryTime)}</div></div>
-  <div class="info-box"><span class="label">Returns / Missing</span><div class="val" style="font-size:12px">${d.returns||0} / ${d.missing||0}</div></div>
-  ${routesHtml}
-</div>
-${d.inspectionDone?`<div style="background:#22c55e20;border:1px solid #22c55e40;border-radius:7px;padding:7px;text-align:center;margin-bottom:8px"><span style="color:#22c55e;font-weight:700;font-size:12px">${d.inspectionManual?'📋':'✓'} INSPECTION DONE</span>${d.inspectionDoneTime?`<div style="font-size:9px;color:var(--fg3);margin-top:1px">at ${fmt(d.inspectionDoneTime)}</div>`:''}</div>`:''}
-${gpsLink}
-${breakHtml}${inactHtml}
-<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--bg3);font-size:9px;color:var(--fg3)">
-  TID: ${tid} · First seen: ${fmt(d.firstSeen)} · Station: ${memory.station||currentStation}
-</div>`;
+  // Break history
+  let breakHtml = '';
+  if (d.breaks && d.breaks.length > 0) {
+    breakHtml = `<div style="margin-top:8px"><div style="font-weight:700;font-size:10px;color:var(--fg2);margin-bottom:3px">☕ Breaks (${d.breaks.length})</div>`;
+    d.breaks.forEach((b, i) => {
+      const dur = b.end ? Math.round((b.end - b.start) / 60000) : Math.round((Date.now() - b.start) / 60000);
+      const endStr = b.end ? fmt(b.end) : 'In Progress';
+      breakHtml += `<div style="font-size:10px;color:#93c5fd;padding:2px 0;border-bottom:1px solid var(--bg3)">${fmt(b.start)} → ${endStr} (${dur}m)</div>`;
+    });
+    breakHtml += '</div>';
+  }
+
+  // Inactivity log
+  let inactHtml = '';
+  if (d.inactivityLog && d.inactivityLog.length > 0) {
+    inactHtml = `<div style="margin-top:8px"><div style="font-weight:700;font-size:10px;color:var(--fg2);margin-bottom:3px">⏸ Inactivity (${d.inactivityLog.length})</div>`;
+    d.inactivityLog.forEach(l => {
+      const locLink = (l.lat && l.lon) ? ` <a href="https://maps.apple.com/?ll=${l.lat},${l.lon}" target="_blank" style="color:var(--blue);font-size:9px">📍</a>` : '';
+      inactHtml += `<div style="font-size:10px;color:#f59e0b;padding:2px 0;border-bottom:1px solid var(--bg3)">${fmt(l.start)} — ${l.duration}m${locLink}</div>`;
+    });
+    inactHtml += '</div>';
+  }
+
+  // Routes
+  let routesHtml = '';
+  if (d.allRoutes && d.allRoutes.length >= 2) {
+    routesHtml = `<div class="info-box" style="grid-column:span 2">
+      <span class="label">${d.isSweeper ? 'Sweeper' : 'All'} Routes</span>
+      <div class="val" style="font-size:11px;color:#fb923c">${[...new Set(d.allRoutes)].join(', ')}</div>
+    </div>`;
+  }
+
+  // TBAs
+  let tbaHtml = '';
+  if (d.tbas && Object.keys(d.tbas).length > 0) {
+    const entries = Object.entries(d.tbas).slice(0, 20);
+    tbaHtml = `<div style="margin-top:8px"><div style="font-weight:700;font-size:10px;color:var(--fg2);margin-bottom:3px">📦 Problem TBAs (${Object.keys(d.tbas).length})</div>`;
+    entries.forEach(([tba, info]) => {
+      const color = info.reason.includes('MISSING') ? '#d946ef' : '#ef4444';
+      tbaHtml += `<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid var(--bg3);font-size:9px">
+        <span style="color:#fff;font-family:monospace;user-select:all">${tba}</span>
+        <span style="color:${color};font-weight:700">${info.reason.replace(/_/g, ' ')}</span>
+      </div>`;
+    });
+    tbaHtml += '</div>';
+  }
+
+  // Returned TBAs
+  let retTbaHtml = '';
+  if (d.returnedTbas && d.returnedTbas.length > 0) {
+    retTbaHtml = `<div style="margin-top:8px"><div style="font-weight:700;font-size:10px;color:var(--fg2);margin-bottom:3px">↩️ Returned TBAs (${d.returnedTbas.length})</div>`;
+    d.returnedTbas.slice(0, 20).forEach(tba => {
+      retTbaHtml += `<div style="font-size:9px;color:#a78bfa;padding:2px 0;border-bottom:1px solid var(--bg3);font-family:monospace;user-select:all">${tba}</div>`;
+    });
+    retTbaHtml += '</div>';
+  }
+
+  document.getElementById('modalContent').innerHTML = `
+    <!-- Header -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div>
+        <div style="font-size:14px;font-weight:800;display:flex;align-items:center;gap:4px">
+          ${gpsDot(d)}
+          <span style="color:${c}">${d.route || '?'}</span>
+          ${displayName}
+          ${d.inspectionDone ? '<span style="background:#22c55e;color:#fff;padding:1px 5px;border-radius:3px;font-size:8px;font-weight:700;margin-left:4px">INSP DONE</span>' : ''}
+        </div>
+        <div style="font-size:10px;color:var(--fg2);margin-top:2px">
+          Work: <a href="tel:${workPhone}" style="color:var(--blue);text-decoration:none">${formatPhone(workPhone)}</a>
+        </div>
+        ${d.vehicleId ? `<div style="font-size:10px;color:var(--fg3)">Vehicle: ${d.vehicleId}</div>` : ''}
+      </div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+
+    <!-- Status + Pace -->
+    <div class="info-grid">
+      <div class="info-box" style="text-align:center"><span class="label">Status</span><div class="val" style="color:${c};font-size:11px">${state}</div></div>
+      <div class="info-box" style="text-align:center"><span class="label">Pace</span><div class="val">${d.pace || '—'}</div></div>
+    </div>
+
+    <!-- Progress bar -->
+    <div style="background:var(--bg2);padding:6px 8px;border-radius:6px;margin-bottom:6px">
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--fg2);margin-bottom:2px"><span>Progress</span><span style="color:#fff;font-weight:700">${Math.round(sp)}%</span></div>
+      <div style="background:var(--bg3);height:6px;border-radius:4px;overflow:hidden"><div style="width:${sp}%;height:100%;background:${c};border-radius:4px"></div></div>
+    </div>
+
+    <!-- Stats -->
+    <div class="info-grid tri">
+      <div class="info-box" style="text-align:center"><span class="label">Remaining</span><div class="val">${sR}</div><span class="label">stops</span></div>
+      <div class="info-box" style="text-align:center"><span class="label">Delivered</span><div class="val" style="color:var(--green)">${d.stopsCompleted || 0}</div><span class="label">of ${d.stopsTotal || 0}</span></div>
+      <div class="info-box" style="text-align:center"><span class="label">Packages</span><div class="val">${dP}</div><span class="label">of ${pkgT}</span></div>
+    </div>
+
+    <!-- Details -->
+    <div class="info-grid">
+      <div class="info-box"><span class="label">Last Delivery</span><div class="val" style="font-size:11px">${fmt(d.lastDeliveryTime)}</div></div>
+      <div class="info-box"><span class="label">First Delivery</span><div class="val" style="font-size:11px">${fmt(d.firstDeliveryTime)}</div></div>
+      <div class="info-box"><span class="label">Returns / Missing</span><div class="val" style="font-size:11px">${d.returns || 0} / ${d.missing || 0}</div></div>
+      <div class="info-box"><span class="label">Extra Phones</span><div class="val" style="font-size:11px;color:var(--orange)">${d.extraPhoneCount || 0}</div></div>
+      ${routesHtml}
+    </div>
+
+    ${gpsHtml}
+
+    <!-- ═══ MANUAL ACTIONS ═══ -->
+    <div style="background:var(--bg2);border:1px solid var(--bg3);border-radius:7px;padding:8px;margin-bottom:6px">
+      <div style="font-size:10px;font-weight:700;color:var(--red);margin-bottom:6px">🔧 Actions</div>
+      <div class="action-grid">
+        <button class="act-btn ${d.isPinned ? 'on' : ''}" onclick="sendCommand('pin','${tid}',${!d.isPinned});closeModal()">📌 ${d.isPinned ? 'Pinned' : 'Pin'}</button>
+        <button class="act-btn ${d.isSweeper ? 'on' : ''}" onclick="sendCommand('sweeper','${tid}',${!d.isSweeper});closeModal()">🧹 Sweep</button>
+        <button class="act-btn ${d.isHelper ? 'on' : ''}" onclick="sendCommand('helper','${tid}',${!d.isHelper});closeModal()">🤝 Help</button>
+        <button class="act-btn ${d.isFlexRoute ? 'on' : ''}" onclick="sendCommand('flex','${tid}',${!d.isFlexRoute});closeModal()">📦 Flex</button>
+        <button class="act-btn ${d.manuallyDelivered ? 'on' : ''}" onclick="sendCommand('delivered','${tid}',${!d.manuallyDelivered});closeModal()">✅ Delivered</button>
+        <button class="act-btn ${d.inspectionDone ? 'on' : ''}" onclick="sendCommand('inspectionDone','${tid}',${!d.inspectionDone});closeModal()">📋 Insp Done</button>
+        <button class="act-btn ${d._manualBreak ? 'on' : ''}" onclick="sendCommand('manualBreak','${tid}',true);closeModal()">☕ Took Break</button>
+        <button class="act-btn" onclick="sendCommand('remove','${tid}',true);closeModal()">🗑 Remove</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:10px;color:var(--orange)">
+        <span>📱 Extra Phones:</span>
+        <button class="act-btn" onclick="sendCommand('extraPhone','${tid}',0,{delta:-1});closeModal()" style="width:24px;padding:2px">−</button>
+        <span style="color:var(--amber);font-weight:700;min-width:16px;text-align:center">${d.extraPhoneCount || 0}</span>
+        <button class="act-btn" onclick="sendCommand('extraPhone','${tid}',0,{delta:1});closeModal()" style="width:24px;padding:2px">+</button>
+      </div>
+    </div>
+
+    ${breakHtml}
+    ${inactHtml}
+    ${tbaHtml}
+    ${retTbaHtml}
+
+    <div style="margin-top:10px;padding-top:6px;border-top:1px solid var(--bg3);font-size:8px;color:var(--fg3)">
+      TID: ${tid} · Station: ${memory.station || currentStation} · Dispatch Radar by Andrismar T.
+    </div>
+  `;
+
   document.getElementById('driverModal').classList.add('open');
 }
-function closeModal(){document.getElementById('driverModal').classList.remove('open')}
 
-// ── Map View ──
-function openMap(){
+function closeModal() {
+  document.getElementById('driverModal').classList.remove('open');
+}
+
+// ═══════════════════════
+//  MAP VIEW
+// ═══════════════════════
+
+function openMap() {
   document.getElementById('mapOverlay').classList.add('open');
-  const drivers=getRaw().filter(d=>d.lat&&d.lon&&Number.isFinite(d.lat)&&Number.isFinite(d.lon));
-  document.getElementById('mapCount').textContent=drivers.length+' on map';
+  const drivers = getRaw().filter(d => d.lat && d.lon && Number.isFinite(d.lat) && Number.isFinite(d.lon));
+  document.getElementById('mapCount').textContent = drivers.length + ' on map';
 
-  if(!leafletMap){
-    leafletMap=L.map('mapContainer',{zoomControl:false}).setView([40.55,-74.17],12);
-    L.control.zoom({position:'bottomright'}).addTo(leafletMap);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'©OSM ©CARTO',maxZoom:19}).addTo(leafletMap);
+  if (!leafletMap) {
+    leafletMap = L.map('mapContainer', { zoomControl: false }).setView([40.55, -74.17], 12);
+    L.control.zoom({ position: 'bottomright' }).addTo(leafletMap);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '©OSM ©CARTO', maxZoom: 19
+    }).addTo(leafletMap);
   }
-  setTimeout(()=>leafletMap.invalidateSize(),100);
+  setTimeout(() => leafletMap.invalidateSize(), 100);
 
-  // Clear old markers
-  mapMarkers.forEach(m=>leafletMap.removeLayer(m));mapMarkers=[];
+  mapMarkers.forEach(m => leafletMap.removeLayer(m));
+  mapMarkers = [];
 
-  if(!drivers.length)return;
+  if (!drivers.length) return;
 
   // Station marker
-  const stationCoords={DJE5:[40.5245,-74.2574],DJZ6:[40.6667,-73.9958],DYY6:[40.6844,-73.9762],DNJ4:[40.7282,-74.0776]};
-  const sc2=stationCoords[currentStation];
-  if(sc2){const sm=L.circleMarker(sc2,{radius:10,color:'#818cf8',fillColor:'#818cf8',fillOpacity:.8,weight:2}).bindPopup(`<b>${currentStation}</b><br>Station`);leafletMap.addLayer(sm);mapMarkers.push(sm);}
+  const stationCoords = { DJE5: [40.5245, -74.2574], DJZ6: [40.6667, -73.9958], DYY6: [40.6844, -73.9762], DNJ4: [40.7282, -74.0776] };
+  const sc2 = stationCoords[currentStation];
+  if (sc2) {
+    const sm = L.circleMarker(sc2, { radius: 10, color: '#818cf8', fillColor: '#818cf8', fillOpacity: .8, weight: 2 })
+      .bindPopup(`<b>${currentStation}</b><br>Station`);
+    leafletMap.addLayer(sm);
+    mapMarkers.push(sm);
+  }
 
-  drivers.forEach(d=>{
-    const color=d.inspectionDone?'#22c55e':d.state==='INACTIVE'?'#f59e0b':d.state==='ON BREAK'?'#3b82f6':d.state==='FINISHED'?'#10b981':d.isSweeper?'#fb923c':d.isHelper?'#60a5fa':d.isFlexRoute?'#a855f7':'#10b981';
-    const m=L.circleMarker([d.lat,d.lon],{radius:7,color:color,fillColor:color,fillOpacity:.85,weight:1.5}).bindPopup(`<div style="font-size:12px"><b>${d.route||'?'}</b> ${abbr(d.name)}<br>${dispState(d)}<br>Stops: ${d.stopsCompleted||0}/${d.stopsTotal||0}<br>Pace: ${d.pace||'—'}</div>`);
-    leafletMap.addLayer(m);mapMarkers.push(m);
+  drivers.forEach(d => {
+    const color = d.inspectionDone ? '#22c55e' : d.state === 'INACTIVE' ? '#f59e0b' : d.state === 'ON BREAK' ? '#3b82f6' :
+      d.state === 'FINISHED' ? '#10b981' : d.isSweeper ? '#fb923c' : d.isHelper ? '#60a5fa' : d.isFlexRoute ? '#a855f7' : '#10b981';
+    const m = L.circleMarker([d.lat, d.lon], { radius: 7, color, fillColor: color, fillOpacity: .85, weight: 1.5 })
+      .bindPopup(`<div style="font-size:11px"><b>${d.route || '?'}</b> ${abbr(d.name)}<br>${dispState(d)}<br>Stops: ${d.stopsCompleted || 0}/${d.stopsTotal || 0}<br>Pace: ${d.pace || '—'}</div>`);
+    leafletMap.addLayer(m);
+    mapMarkers.push(m);
   });
 
-  const bounds=L.latLngBounds(drivers.map(d=>[d.lat,d.lon]));
-  if(sc2)bounds.extend(sc2);
-  leafletMap.fitBounds(bounds,{padding:[30,30]});
+  const bounds = L.latLngBounds(drivers.map(d => [d.lat, d.lon]));
+  if (sc2) bounds.extend(sc2);
+  leafletMap.fitBounds(bounds, { padding: [30, 30] });
 }
-function closeMap(){document.getElementById('mapOverlay').classList.remove('open')}
 
-// ── Pull to refresh ──
-let touchY=0;const lw=document.getElementById('listWrap');
-lw.addEventListener('touchstart',e=>{touchY=e.touches[0].clientY},{passive:true});
-lw.addEventListener('touchend',e=>{if(lw.scrollTop===0&&e.changedTouches[0].clientY-touchY>80)fetchData()});
+function closeMap() {
+  document.getElementById('mapOverlay').classList.remove('open');
+}
 
-// ── Sync label updater ──
-setInterval(()=>{if(lastFetch>0){const a=Math.round((Date.now()-lastFetch)/1000);const l=document.getElementById('syncLabel');if(a<5)l.textContent='Synced just now';else if(a<60)l.textContent=`Synced ${a}s ago`;else l.textContent=`Synced ${Math.floor(a/60)}m ago`;document.getElementById('syncDot').classList.toggle('live',a<REFRESH_MS/1000);}},1000);
+// ═══════════════════════
+//  DEBRIEF (cloud sync)
+// ═══════════════════════
+
+async function openDebrief() {
+  document.getElementById('debriefOverlay').classList.add('open');
+  document.getElementById('debriefText').value = 'Loading from cloud...';
+  document.getElementById('debriefParsed').innerHTML = '';
+
+  try {
+    const resp = await fetch(cloudUrl + '?action=debrief&station=' + currentStation);
+    const data = await resp.json();
+    if (data && data.raw) {
+      document.getElementById('debriefText').value = data.raw;
+      parseAndShowDebrief(data.raw);
+    } else {
+      document.getElementById('debriefText').value = '';
+      document.getElementById('debriefText').placeholder = 'No debrief saved yet. Paste it here...';
+    }
+  } catch (e) {
+    document.getElementById('debriefText').value = '';
+    document.getElementById('debriefText').placeholder = 'Could not load debrief. Paste it here...';
+  }
+}
+
+function closeDebrief() {
+  document.getElementById('debriefOverlay').classList.remove('open');
+}
+
+async function saveDebriefToCloud() {
+  const text = document.getElementById('debriefText').value.trim();
+  if (!text) { showToast('Debrief is empty'); return; }
+
+  const btn = document.getElementById('debriefSaveBtn');
+  btn.textContent = '⏳ Saving...';
+
+  const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const payload = {
+    raw: text,
+    date: nowET.toDateString(),
+    station: currentStation,
+    source: 'mobile'
+  };
+
+  try {
+    await fetch(cloudUrl + '?action=debrief&station=' + currentStation, {
+      method: 'POST', mode: 'cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(payload)
+    });
+    btn.textContent = '✅ Saved!';
+    parseAndShowDebrief(text);
+    showToast('Debrief saved to cloud');
+    setTimeout(() => { btn.textContent = '💾 Save'; }, 2000);
+  } catch (e) {
+    btn.textContent = '✗ Failed';
+    showToast('Save failed', true);
+    setTimeout(() => { btn.textContent = '💾 Save'; }, 2000);
+  }
+}
+
+function parseAndShowDebrief(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  let section = '';
+  let attendance = [], sweepers = [], extraPhones = [], alerts = [];
+
+  lines.forEach(line => {
+    if (/attendance:/i.test(line)) { section = 'att'; return; }
+    if (/sweeper:/i.test(line)) { section = 'sweep'; return; }
+    if (/extra\s*phones?[:\s]/i.test(line) || /^extra\s*phones?$/i.test(line)) { section = 'ep'; return; }
+    if (/alerts?:/i.test(line)) { section = 'alert'; return; }
+    if (/additional:/i.test(line) || /pick\s*ups?:/i.test(line) || /stand.?up/i.test(line) || /weather:/i.test(line)) { section = 'other'; return; }
+
+    const content = line.replace(/^[•\-\*]\s*/, '').trim();
+    if (!content) return;
+    if (section === 'att') attendance.push(content);
+    if (section === 'sweep') sweepers.push(content);
+    if (section === 'ep') extraPhones.push(content);
+    if (section === 'alert') alerts.push(content);
+  });
+
+  let html = '';
+  if (attendance.length) html += `<div style="font-size:10px;font-weight:700;color:var(--green);margin-bottom:2px">Attendance (${attendance.length})</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${attendance.join(', ')}</div>`;
+  if (sweepers.length) html += `<div style="font-size:10px;font-weight:700;color:var(--orange);margin-bottom:2px">Sweepers</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${sweepers.join(', ')}</div>`;
+  if (extraPhones.length) html += `<div style="font-size:10px;font-weight:700;color:#f97316;margin-bottom:2px">Extra Phones (${extraPhones.length})</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${extraPhones.join(', ')}</div>`;
+  if (alerts.length) html += `<div style="font-size:10px;font-weight:700;color:var(--red);margin-bottom:2px">Alerts</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${alerts.join(', ')}</div>`;
+
+  document.getElementById('debriefParsed').innerHTML = html;
+}
+
+// ═══════════════════════
+//  STAPLES REPORT (cloud sync + copy)
+// ═══════════════════════
+
+let staplesData = { itinerary: '', scanned: '', totalReturns: '', manager: '' };
+
+async function openStaples() {
+  document.getElementById('staplesOverlay').classList.add('open');
+
+  // Try to load from cloud
+  try {
+    const resp = await fetch(cloudUrl + '?action=staples&station=' + currentStation);
+    const data = await resp.json();
+    if (data && data.itinerary !== undefined) {
+      staplesData = data;
+    }
+  } catch (e) {}
+
+  renderStaples();
+}
+
+function closeStaples() {
+  document.getElementById('staplesOverlay').classList.remove('open');
+}
+
+function renderStaples() {
+  const sd = staplesData;
+  const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  if (et.getHours() < 2) et.setDate(et.getDate() - 1);
+  const dateStr = String(et.getMonth() + 1).padStart(2, '0') + '/' + String(et.getDate()).padStart(2, '0') + '/' + et.getFullYear();
+
+  document.getElementById('staplesBody').innerHTML = `
+    <div style="text-align:center;margin-bottom:12px">
+      <div style="font-size:16px;font-weight:800;color:#86efac">📎 STAPLES ${dateStr}</div>
+      <div style="font-size:8px;color:#4b5563;font-style:italic">By: Andrismar T.</div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#86efac;margin-bottom:2px">EXPECTED (Picked-Expected)</div>
+        <input class="staples-input" id="stpl_itin" value="${sd.itinerary || ''}" placeholder="24-24" oninput="onStaplesInput()">
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#86efac;margin-bottom:2px">SCANNED</div>
+        <input class="staples-input" id="stpl_scan" value="${sd.scanned || ''}" placeholder="31" oninput="onStaplesInput()">
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#86efac;margin-bottom:2px">TOTAL RETURNS</div>
+        <input class="staples-input" id="stpl_total" value="${sd.totalReturns || ''}" placeholder="33" oninput="onStaplesInput()">
+      </div>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#86efac;margin-bottom:2px">MANAGER ON DUTY</div>
+        <input class="staples-input" id="stpl_mgr" value="${sd.manager || ''}" placeholder="Manager name" oninput="onStaplesInput()">
+      </div>
+    </div>
+
+    <div id="staplesPreview" style="background:#050b14;border:1px solid var(--bg3);border-radius:7px;padding:10px;margin-bottom:10px"></div>
+
+    <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap">
+      <button class="hdr-btn" onclick="copyStaples()" style="padding:8px 16px;font-size:12px">📋 Copy Report</button>
+      <button class="hdr-btn" onclick="shareStaples()" style="padding:8px 16px;font-size:12px">📤 Share</button>
+      <button class="hdr-btn" onclick="saveStaplesToCloud()" style="padding:8px 16px;font-size:12px">💾 Save to Cloud</button>
+    </div>
+
+    <p style="font-size:8px;color:var(--fg3);text-align:center;margin-top:12px;font-style:italic">Dispatch Radar — By: Andrismar T.</p>
+  `;
+
+  updateStaplesPreview();
+}
+
+function onStaplesInput() {
+  staplesData.itinerary = document.getElementById('stpl_itin').value;
+  staplesData.scanned = document.getElementById('stpl_scan').value;
+  staplesData.totalReturns = document.getElementById('stpl_total').value;
+  staplesData.manager = document.getElementById('stpl_mgr').value;
+  updateStaplesPreview();
+}
+
+function calcStaplesReport(sd) {
+  const itinStr = (sd.itinerary || '').replace(/[–—]/g, '-').trim();
+  let pickedUp = 0, expected = 0;
+  if (itinStr.includes('-')) {
+    const parts = itinStr.split('-').map(s => parseInt(s, 10));
+    pickedUp = isNaN(parts[0]) ? 0 : parts[0];
+    expected = isNaN(parts[1]) ? 0 : parts[1];
+  } else {
+    pickedUp = parseInt(itinStr, 10) || 0;
+    expected = pickedUp;
+  }
+  const scannedStr = (sd.scanned || '').replace(/[–—]/g, '-').trim();
+  let scanned = scannedStr.includes('-') ? parseInt(scannedStr.split('-')[0], 10) || 0 : parseInt(scannedStr, 10) || 0;
+  const totalReturns = parseInt(sd.totalReturns, 10) || 0;
+  const nonItinerary = Math.max(0, totalReturns - pickedUp);
+  const notScanned = Math.max(0, totalReturns - scanned);
+  return { pickedUp, expected, scanned, totalReturns, nonItinerary, notScanned, manager: (sd.manager || '').trim() || 'N/A' };
+}
+
+function buildStaplesText(c) {
+  const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  if (et.getHours() < 2) et.setDate(et.getDate() - 1);
+  const mm = String(et.getMonth() + 1).padStart(2, '0');
+  const dd = String(et.getDate()).padStart(2, '0');
+  const yyyy = et.getFullYear();
+  return `STAPLES ${mm}/${dd}/${yyyy}\n` +
+    `• Itinerary Pick-up: ${c.pickedUp} out of ${c.expected}\n` +
+    `• Non-itinerary Pick-up: ${c.nonItinerary} Boxes\n` +
+    `• Total scanned: ${c.scanned} Boxes\n` +
+    `• Not Scanned: ${c.notScanned} Box${c.notScanned === 1 ? '' : 'es'}\n` +
+    `• Total Returns: ${c.totalReturns} Boxes\n` +
+    `• Manager On Duty: ${c.manager}`;
+}
+
+function updateStaplesPreview() {
+  const c = calcStaplesReport(staplesData);
+  const el = document.getElementById('staplesPreview');
+  if (!el) return;
+  el.innerHTML = `
+    <div style="font-size:9px;font-weight:700;color:#3a6a50;text-transform:uppercase;margin-bottom:6px">PREVIEW</div>
+    <div style="font-size:11px;color:#a8bfd4;white-space:pre-wrap;line-height:1.6">${buildStaplesText(c)}</div>
+  `;
+}
+
+function copyStaples() {
+  const c = calcStaplesReport(staplesData);
+  const text = buildStaplesText(c);
+  navigator.clipboard.writeText(text).then(() => {
+    showToast('📋 Copied to clipboard!');
+  }).catch(() => {
+    // Fallback for iOS
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('📋 Copied!');
+  });
+}
+
+async function shareStaples() {
+  const c = calcStaplesReport(staplesData);
+  const text = buildStaplesText(c);
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: 'Staples Report', text });
+      showToast('Shared!');
+    } catch (e) {
+      copyStaples();
+    }
+  } else {
+    copyStaples();
+  }
+}
+
+async function saveStaplesToCloud() {
+  try {
+    await fetch(cloudUrl + '?action=staples&station=' + currentStation, {
+      method: 'POST', mode: 'cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(staplesData)
+    });
+    showToast('💾 Staples saved to cloud');
+  } catch (e) {
+    showToast('Save failed', true);
+  }
+}
+
+// ═══════════════════════
+//  PULL TO REFRESH
+// ═══════════════════════
+
+let touchY = 0;
+const lw = document.getElementById('listWrap');
+lw.addEventListener('touchstart', e => { touchY = e.touches[0].clientY; }, { passive: true });
+lw.addEventListener('touchend', e => {
+  if (lw.scrollTop === 0 && e.changedTouches[0].clientY - touchY > 80) fetchData();
+});
+
+// ═══════════════════════
+//  SYNC LABEL UPDATER
+// ═══════════════════════
+
+setInterval(() => {
+  if (lastFetch > 0) {
+    const ago = Math.round((Date.now() - lastFetch) / 1000);
+    const label = document.getElementById('syncLabel');
+    if (ago < 5) label.textContent = '● Synced just now';
+    else if (ago < 60) label.textContent = `● Synced ${ago}s ago`;
+    else label.textContent = `● Synced ${Math.floor(ago / 60)}m ago`;
+    document.getElementById('syncDot').classList.toggle('live', ago < REFRESH_MS / 1000);
+  }
+}, 1000);
+
+// ═══════════════════════
+//  INIT
+// ═══════════════════════
 
 boot();
 </script>
