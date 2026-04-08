@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Fleet Radar">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Fleet Radar Mobile</title>
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%23111827'/%3E%3Ccircle cx='90' cy='85' r='50' fill='none' stroke='%2310b981' stroke-width='5'/%3E%3Ccircle cx='90' cy='85' r='6' fill='%2310b981'/%3E%3Cline x1='90' y1='85' x2='90' y2='50' stroke='%2310b981' stroke-width='4' stroke-linecap='round'/%3E%3Ctext x='90' y='155' text-anchor='middle' fill='%2310b981' font-size='18' font-weight='bold' font-family='system-ui'%3ERADAR%3C/text%3E%3C/svg%3E">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#111827;--bg2:#1f2937;--bg3:#374151;--fg:#f3f4f6;--fg2:#9ca3af;--fg3:#6b7280;--green:#10b981;--blue:#3b82f6;--amber:#f59e0b;--red:#ef4444;--indigo:#818cf8;--cyan:#06b6d4;--violet:#8b5cf6;--orange:#fb923c;--purple:#a855f7;--safe-top:env(safe-area-inset-top,0px);--safe-bot:env(safe-area-inset-bottom,0px)}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,sans-serif;font-size:13px;-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+#app{display:flex;flex-direction:column;height:100%;padding-top:var(--safe-top);padding-bottom:var(--safe-bot)}
+
+/* ── Header ── */
+.hdr{background:var(--bg);padding:8px 12px 6px;border-bottom:1px solid var(--bg3);flex-shrink:0;z-index:10}
+.hdr-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.hdr-title{font-size:16px;font-weight:800;color:var(--green);display:flex;align-items:center;gap:6px}
+.hdr-title .dot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(16,185,129,.5)}50%{opacity:.7;box-shadow:0 0 0 6px rgba(16,185,129,0)}}
+.hdr-controls{display:flex;align-items:center;gap:6px}
+.hdr-btn{background:var(--bg2);color:var(--fg2);border:1px solid var(--bg3);border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;white-space:nowrap;font-weight:600;transition:all .15s}
+.hdr-btn:active{transform:scale(.95)}
+.hdr-btn.active{background:var(--green);color:#fff;border-color:var(--green)}
+.hdr-station{font-size:12px;font-weight:700;color:var(--indigo);padding:3px 8px;background:var(--bg2);border:1px solid var(--bg3);border-radius:6px;cursor:pointer}
+.hdr-sync{font-size:10px;color:var(--fg3);padding-top:2px;display:flex;align-items:center;gap:4px}
+.hdr-sync .sync-dot{width:6px;height:6px;border-radius:50%;background:var(--fg3);transition:background .3s}
+.hdr-sync .sync-dot.live{background:var(--green)}
+.hdr-sync .sync-dot.err{background:var(--red)}
+
+/* ── Global progress bar ── */
+.gpb{padding:6px 12px;flex-shrink:0}
+.gpb-label{display:flex;justify-content:space-between;font-size:11px;color:var(--fg2);margin-bottom:3px}
+.gpb-label b{color:#fff}
+.gpb-track{background:var(--bg3);border-radius:4px;height:7px;overflow:hidden}
+.gpb-fill{height:100%;border-radius:4px;transition:width .6s ease;background:var(--green)}
+@keyframes barMove{to{background-position:30px 0}}
+.gpb-fill.animated{background-image:linear-gradient(45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent);background-size:30px 30px;animation:barMove 1s linear infinite}
+
+/* ── Search bar ── */
+.search-wrap{padding:0 12px 6px;flex-shrink:0}
+.search-input{width:100%;background:var(--bg2);border:1px solid var(--bg3);color:#fff;padding:7px 10px 7px 32px;border-radius:8px;font-size:13px;outline:none;transition:border-color .2s}
+.search-input:focus{border-color:var(--blue)}
+.search-wrap{position:relative}
+.search-wrap::before{content:'';position:absolute;left:22px;top:50%;transform:translateY(-50%);width:14px;height:14px;border:2px solid var(--fg3);border-radius:50%;pointer-events:none}
+.search-wrap::after{content:'';position:absolute;left:35px;top:calc(50% + 6px);width:2px;height:6px;background:var(--fg3);transform:rotate(-45deg);pointer-events:none}
+
+/* ── Filter tabs ── */
+.filters{padding:0 12px 6px;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-shrink:0;scrollbar-width:none}
+.filters::-webkit-scrollbar{display:none}
+.filters-row{display:flex;gap:5px;min-width:max-content}
+.fbtn{background:var(--bg2);color:var(--fg2);border:1px solid var(--bg3);padding:5px 8px;border-radius:6px;font-size:11px;cursor:pointer;white-space:nowrap;font-weight:600;transition:all .15s;flex-shrink:0;user-select:none}
+.fbtn:active{transform:scale(.95)}
+.fbtn.active{background:var(--blue);color:#fff;border-color:#60a5fa;font-weight:700}
+
+/* ── Driver list ── */
+.driver-list-wrap{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 10px 20px}
+.driver-list{display:flex;flex-direction:column;gap:5px}
+
+/* ── Driver card ── */
+.dcard{background:var(--bg2);border-radius:6px;padding:8px 10px;cursor:pointer;transition:transform .1s;position:relative;overflow:hidden;border:1px solid transparent}
+.dcard:active{transform:scale(.985)}
+.dcard-hdr{display:flex;justify-content:space-between;align-items:flex-start;gap:4px}
+.dcard-left{flex:1;min-width:0;overflow:hidden}
+.dcard-name{display:flex;align-items:center;gap:4px;font-weight:700;font-size:13px;color:#fff;overflow:hidden}
+.dcard-name .route{font-weight:800;flex-shrink:0;white-space:nowrap}
+.dcard-name .dname{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.dcard-veh{font-size:10px;color:#d1d5db;font-weight:600;padding-left:22px;margin-top:1px;line-height:1.2}
+.dcard-right{display:flex;align-items:center;gap:6px;flex-shrink:0;padding-top:1px}
+.dcard-bar{width:60px;height:5px;background:var(--bg3);border-radius:3px;overflow:hidden}
+.dcard-bar-fill{height:100%;border-radius:3px;transition:width .4s}
+.dcard-time{font-size:10px;color:var(--fg2);font-weight:500;white-space:nowrap}
+
+/* Badges row */
+.badge-row{display:flex;flex-wrap:wrap;gap:3px;margin-top:3px}
+.badge{padding:2px 5px;border-radius:3px;font-size:8px;font-weight:700;white-space:nowrap;line-height:1.3}
+
+/* Stats row */
+.dcard-stats{display:flex;justify-content:space-between;align-items:baseline;margin-top:3px;font-size:11px;gap:4px}
+.dcard-stats .stat{color:#e5e7eb;font-weight:600}
+.dcard-stats .stat b{color:#fff;font-weight:700}
+.dcard-stats .sep{color:var(--bg3);font-size:9px}
+
+/* GPS dot */
+.gps-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px;vertical-align:middle;flex-shrink:0}
+
+/* ── Modal overlay ── */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:100;display:none;align-items:flex-end;justify-content:center}
+.modal-bg.open{display:flex}
+.modal-card{background:var(--bg);border-radius:16px 16px 0 0;width:100%;max-width:500px;max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px 16px calc(16px + var(--safe-bot));animation:slideUp .25s ease}
+@keyframes slideUp{from{transform:translateY(30%);opacity:0}to{transform:translateY(0);opacity:1}}
+.modal-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.modal-hdr h3{font-size:16px;font-weight:700}
+.modal-close{background:var(--bg2);border:1px solid var(--bg3);color:var(--fg2);padding:4px 12px;border-radius:6px;cursor:pointer;font-size:13px}
+
+/* ── Station picker ── */
+.station-picker{position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:200;display:none;align-items:center;justify-content:center}
+.station-picker.open{display:flex}
+.station-picker-card{background:var(--bg);border-radius:12px;padding:20px;width:80%;max-width:300px;text-align:center}
+.station-picker-card h3{margin-bottom:14px;font-size:16px}
+.station-btn{display:block;width:100%;padding:12px;margin-bottom:8px;background:var(--bg2);border:1px solid var(--bg3);color:#fff;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;transition:all .15s}
+.station-btn:active{transform:scale(.96);background:var(--blue)}
+.station-btn.current{border-color:var(--green);background:#10b98120}
+
+/* ── Setup screen ── */
+.setup-screen{padding:30px 20px;text-align:center;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+.setup-screen h2{font-size:20px;color:var(--green)}
+.setup-screen p{font-size:13px;color:var(--fg2);max-width:300px;line-height:1.5}
+.setup-input{width:100%;max-width:340px;background:var(--bg2);border:1px solid var(--bg3);color:#fff;padding:10px 14px;border-radius:8px;font-size:13px;outline:none}
+.setup-input:focus{border-color:var(--blue)}
+.setup-btn{padding:10px 24px;background:var(--green);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer}
+.setup-btn:active{transform:scale(.96)}
+
+/* ── Empty state ── */
+.empty{text-align:center;padding:40px 20px;color:var(--fg3)}
+.empty .icon{font-size:40px;margin-bottom:12px}
+
+/* ── Pull-to-refresh ── */
+.ptr-indicator{text-align:center;padding:8px;color:var(--fg3);font-size:11px;display:none}
+.ptr-indicator.visible{display:block}
+
+/* ── Idle indicator ── */
+.idle-mins{color:var(--amber);font-weight:700;font-size:11px;margin-top:2px}
+
+/* ── Compact inspection card ── */
+.dcard.insp-compact{padding:5px 8px}
+.dcard.insp-compact .dcard-stats{display:none}
+
+/* ── Loading spinner ── */
+.spinner{width:24px;height:24px;border:3px solid var(--bg3);border-top-color:var(--green);border-radius:50%;animation:spin .6s linear infinite;margin:0 auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Sweeper card */
+.dcard.sweeper{border:none}
+.dcard.helper{border:none}
+.dcard.flex-route{border:none}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Setup screen (shown on first load) -->
+  <div id="setup" class="setup-screen" style="display:none">
+    <h2>Fleet Radar Mobile</h2>
+    <p>Enter your Cloud Sync URL to connect. This is the same URL used by the desktop Tampermonkey script.</p>
+    <input id="setup-url" class="setup-input" placeholder="https://script.google.com/macros/s/.../exec" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <button class="setup-btn" onclick="saveSetup()">Connect</button>
+    <p style="font-size:10px;color:var(--fg3);margin-top:8px">Tip: Save this page to your home screen for full-screen PWA mode.</p>
+  </div>
+
+  <!-- Main app (hidden until configured) -->
+  <div id="main" style="display:none;flex-direction:column;flex:1">>
+    <!-- Header -->
+    <div class="hdr">
+      <div class="hdr-top">
+        <div class="hdr-title"><span class="dot"></span> Fleet Radar</div>
+        <div class="hdr-controls">
+          <span id="stationLabel" class="hdr-station" onclick="openStationPicker()">DJE5</span>
+          <button class="hdr-btn" onclick="forceRefresh()" id="refreshBtn">↻</button>
+        </div>
+      </div>
+      <div class="hdr-sync">
+        <span class="sync-dot" id="syncDot"></span>
+        <span id="syncLabel">Connecting...</span>
+        <span style="margin-left:auto;font-size:10px;color:var(--fg3)" id="driverCount"></span>
+      </div>
+    </div>
+
+    <!-- Global progress bar -->
+    <div class="gpb">
+      <div class="gpb-label"><span>Remaining Packages</span><b id="pkgLabel">— / —</b></div>
+      <div class="gpb-track"><div class="gpb-fill" id="pkgBar" style="width:0%"></div></div>
+    </div>
+
+    <!-- Search -->
+    <div class="search-wrap">
+      <input class="search-input" id="searchInput" type="text" placeholder="Search driver or route..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    </div>
+
+    <!-- Filter tabs -->
+    <div class="filters">
+      <div class="filters-row" id="filterTabs"></div>
+    </div>
+
+    <!-- Pull-to-refresh indicator -->
+    <div class="ptr-indicator" id="ptrIndicator">↻ Pull to refresh</div>
+
+    <!-- Driver list -->
+    <div class="driver-list-wrap" id="listWrap">
+      <div class="driver-list" id="driverList">
+        <div class="empty"><div class="spinner"></div><p style="margin-top:12px">Loading fleet data...</p></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Station picker overlay -->
+  <div class="station-picker" id="stationPicker">
+    <div class="station-picker-card">
+      <h3>Select Station</h3>
+      <div id="stationBtns"></div>
+      <button class="hdr-btn" style="margin-top:8px;width:100%;padding:10px" onclick="closeStationPicker()">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Driver detail modal -->
+  <div class="modal-bg" id="driverModal" onclick="if(event.target===this)closeModal()">
+    <div class="modal-card" id="modalContent"></div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  FLEET RADAR MOBILE — Phase 1: Read-only mirror
+//  Syncs with desktop Tampermonkey script via CLOUD_SYNC_URL
+// ═══════════════════════════════════════════════════════════════
+
+const STATIONS = ['DJE5','DJZ6','DYY6','DNJ4'];
+const REFRESH_INTERVAL = 30000; // 30 seconds
+const CLOUD_SYNC_URL = 'https://script.google.com/macros/s/AKfycbyh90Qa9FuE_tHyZ9T-rQyOOtwFeZxVt-4iUB_LOtyoupoBU8xp-xPUKCXF1EJrjzPCPQ/exec';
+const LS_KEY_URL = 'fleet_radar_mobile_url';
+const LS_KEY_STATION = 'fleet_radar_mobile_station';
+
+let cloudUrl = CLOUD_SYNC_URL || localStorage.getItem(LS_KEY_URL) || '';
+let currentStation = localStorage.getItem(LS_KEY_STATION) || 'DJE5';
+let memory = {};
+let lastFetch = 0;
+let refreshTimer = null;
+let activeFilter = 'ALL';
+let searchQuery = '';
+let isRefreshing = false;
+
+// ── Boot ──
+function boot() {
+  if (!cloudUrl) {
+    document.getElementById('setup').style.display = 'flex';
+    document.getElementById('main').style.display = 'none';
+    return;
+  }
+  document.getElementById('setup').style.display = 'none';
+  const mainEl = document.getElementById('main');
+  mainEl.style.display = 'flex';
+  mainEl.style.flexDirection = 'column';
+  mainEl.style.flex = '1';
+  document.getElementById('stationLabel').textContent = currentStation;
+  fetchData();
+  refreshTimer = setInterval(fetchData, REFRESH_INTERVAL);
+}
+
+function saveSetup() {
+  const url = document.getElementById('setup-url').value.trim();
+  if (!url || !url.startsWith('http')) { alert('Please enter a valid URL'); return; }
+  cloudUrl = url;
+  localStorage.setItem(LS_KEY_URL, cloudUrl);
+  boot();
+}
+
+// ── Fetch cloud data ──
+async function fetchData() {
+  if (isRefreshing) return;
+  isRefreshing = true;
+  setSyncStatus('syncing');
+  try {
+    const resp = await fetch(cloudUrl + '?station=' + currentStation, {
+      method: 'GET', mode: 'cors', cache: 'no-cache'
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if (data && data.drivers) {
+      memory = data;
+      lastFetch = Date.now();
+      setSyncStatus('live');
+      render();
+    } else {
+      setSyncStatus('empty');
+    }
+  } catch (e) {
+    console.error('[Mobile] Fetch error:', e);
+    setSyncStatus('error', e.message);
+    // Still render whatever we have
+    if (memory.drivers) render();
+  }
+  isRefreshing = false;
+}
+
+function forceRefresh() {
+  const btn = document.getElementById('refreshBtn');
+  btn.style.transform = 'rotate(360deg)';
+  btn.style.transition = 'transform .5s';
+  setTimeout(() => { btn.style.transform = ''; btn.style.transition = ''; }, 600);
+  fetchData();
+}
+
+function setSyncStatus(status, detail) {
+  const dot = document.getElementById('syncDot');
+  const label = document.getElementById('syncLabel');
+  dot.className = 'sync-dot';
+  if (status === 'live') {
+    dot.classList.add('live');
+    const ago = Math.round((Date.now() - lastFetch) / 1000);
+    label.textContent = 'Synced · ' + new Date(lastFetch).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+  } else if (status === 'syncing') {
+    label.textContent = '☁️ Syncing...';
+  } else if (status === 'error') {
+    dot.classList.add('err');
+    label.textContent = '✗ ' + (detail || 'Offline');
+  } else if (status === 'empty') {
+    label.textContent = '⚠ No data for ' + currentStation;
+  }
+}
+
+// ── Station picker ──
+function openStationPicker() {
+  const el = document.getElementById('stationPicker');
+  el.classList.add('open');
+  document.getElementById('stationBtns').innerHTML = STATIONS.map(s =>
+    `<button class="station-btn ${s===currentStation?'current':''}" onclick="selectStation('${s}')">${s}</button>`
+  ).join('');
+}
+function closeStationPicker() { document.getElementById('stationPicker').classList.remove('open'); }
+function selectStation(s) {
+  currentStation = s;
+  localStorage.setItem(LS_KEY_STATION, s);
+  document.getElementById('stationLabel').textContent = s;
+  closeStationPicker();
+  memory = {};
+  document.getElementById('driverList').innerHTML = '<div class="empty"><div class="spinner"></div><p style="margin-top:12px">Loading...</p></div>';
+  fetchData();
+}
+
+// ── Search ──
+document.getElementById('searchInput').addEventListener('input', (e) => {
+  searchQuery = e.target.value.toLowerCase().trim();
+  renderDriverList();
+});
+
+// ── Helpers ──
+function formatTime(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+function isActiveToday(d) {
+  if (!d.firstSeen) return (d.stopsCompleted||0) > 0 || d.firstDeliveryTime;
+  const now = new Date();
+  const shiftStart = new Date(now);
+  shiftStart.setHours(2,0,0,0);
+  if (now.getHours() < 2) shiftStart.setDate(shiftStart.getDate() - 1);
+  return d.firstSeen >= shiftStart.getTime() || (d.stopsCompleted||0) > 0 || d.firstDeliveryTime;
+}
+
+function getStateColor(state, d) {
+  if (d && d.inspectionDone) return '#22c55e';
+  if (d && !d.inspectionDone && (d.progressStatus==='BEHIND'||d.progressStatus==='AT_RISK') && state!=='FINISHED') return '#ef4444';
+  switch(state) {
+    case 'INACTIVE': return '#f59e0b';
+    case 'ON BREAK': return '#3b82f6';
+    case 'FINISHED': return '#10b981';
+    case 'AT STATION': return '#818cf8';
+    case 'GETTING GAS': return '#f59e0b';
+    case 'DEPARTED': return '#06b6d4';
+    case 'EN ROUTE': return '#8b5cf6';
+    case 'MOVING': default: return '#10b981';
+  }
+}
+
+function abbreviateName(name) {
+  if (!name) return '';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 3) return parts.slice(0,2).join(' ') + ' ' + parts[2][0] + '.';
+  return name;
+}
+
+function getGpsDot(d) {
+  const recentDelivery = d.lastDeliveryTime && (Date.now() - d.lastDeliveryTime) < 600000;
+  const isIdle = d.state === 'INACTIVE' || (d.currentInactiveStart && (Date.now() - d.currentInactiveStart) >= 600000);
+  let color, shadow='';
+  if (d.gpsMoving && !d.gpsAtStation && !d.gpsDeparted) { color='#10b981'; shadow='0 0 0 2px #10b98155'; }
+  else if (d.gpsDeparted) { color='#06b6d4'; shadow='0 0 0 2px #06b6d455'; }
+  else if (recentDelivery && !isIdle) { color='#3b82f6'; shadow='0 0 0 2px #3b82f655'; }
+  else if (isIdle) { color='#f59e0b'; shadow='0 0 0 2px #f59e0b55'; }
+  else if (d.gpsAtStation) { color='#818cf8'; }
+  else { color='#6b7280'; }
+  return `<span class="gps-dot" style="background:${color};${shadow?'box-shadow:'+shadow:''}"></span>`;
+}
+
+function getDisplayState(d) {
+  if (d.isSweeper) {
+    const noStops = (d.stopsTotal||0)>0 && (d.stopsCompleted||0)>0 && Math.max(0,(d.stopsTotal||0)-(d.stopsCompleted||0)-(d.missing||0)-(d.returns||0))===0;
+    if (d.state==='ON BREAK') return d.inspectionDone ? 'INSP DONE' : (noStops ? '✅ AVAILABLE' : '☕ ON BREAK');
+    if (noStops && d.gpsAtStation) return '✅ FINISHED';
+    if (noStops) return '✅ AVAILABLE';
+    return '🔄 BUSY';
+  }
+  if (d.isFlexRoute) {
+    const noStops = Math.max(0,(d.stopsTotal||0)-(d.stopsCompleted||0)-(d.missing||0)-(d.returns||0))===0 || (d.remainingPkgs||0)===0;
+    if (noStops) return '✅ FINISHED';
+    if (d.state==='ON BREAK') return '☕ ON BREAK';
+    return '🔄 BUSY';
+  }
+  if (d.isHelper) {
+    if (d.state==='ON BREAK') return '☕ ON BREAK';
+    const rem = Math.max(0,(d.stopsTotal||0)-(d.stopsCompleted||0)-(d.missing||0)-(d.returns||0));
+    return rem===0 ? '✅ DONE' : 'HELPING';
+  }
+  if (d.state==='AT STATION' && d.gpsAtStation && d.firstDeliveryTime && (d.stopsCompleted||0)>0 && (d.stopsTotal||0)>0) {
+    const rem = Math.max(0,(d.stopsTotal||0)-(d.stopsCompleted||0)-(d.missing||0)-(d.returns||0));
+    if (rem===0) return 'FINISHED';
+  }
+  if (d.state==='FINISHED' && (!d.firstDeliveryTime || (d.stopsCompleted||0)===0)) return 'AT STATION';
+  if (d.state==='GETTING GAS') return '⛽ Getting Gas';
+  return d.state || 'UNKNOWN';
+}
+
+function getCardStyle(d) {
+  const sc = getStateColor(d.state, d);
+  let style = `border-left:4px solid ${sc};`;
+
+  if (d.isRemoved) return 'border-left:4px solid #4b5563;opacity:.5;background:var(--bg2);';
+  if (d.inspectionDone) return 'background:linear-gradient(145deg,#0d3d22,#072918);border-left:4px solid #2CC871;';
+  if (d.state==='ON BREAK' && !d.isSweeper && !d.isFlexRoute && !d.isHelper) return 'background:linear-gradient(145deg,#1e40af,#1e3a8a);border-left:4px solid #3b82f6;';
+  if (d.state==='GETTING GAS') return 'background:linear-gradient(145deg,#78350f,#451a03);border-left:4px solid #f59e0b;';
+  if (d.isSweeper) {
+    const noStops = (d.stopsTotal||0)>0 && (d.stopsCompleted||0)>0 && Math.max(0,(d.stopsTotal||0)-(d.stopsCompleted||0)-(d.missing||0)-(d.returns||0))===0;
+    const fin = noStops && d.gpsAtStation;
+    const onBreak = d.state==='ON BREAK';
+    if (fin) return 'background:linear-gradient(145deg,#374151,#1f2937);border-left:4px solid #6b7280;';
+    if (onBreak) return 'background:linear-gradient(145deg,#1e40af,#1e3a8a);border-left:4px solid #3b82f6;';
+    if (noStops) return 'background:linear-gradient(145deg,#065f46,#064e3b);border-left:4px solid #10b981;';
+    return 'background:linear-gradient(145deg,#853b12,#5c2709);border-left:4px solid #fb923c;';
+  }
+  if (d.isFlexRoute) return 'background:linear-gradient(145deg,#581c87,#3b0764);border-left:4px solid #a855f7;';
+  if (d.isHelper) {
+    if (d.state==='ON BREAK') return 'background:linear-gradient(145deg,#1e40af,#1e3a8a);border-left:4px solid #3b82f6;';
+    return 'background:linear-gradient(145deg,#1e3a5f,#162d4a);border-left:4px solid #60a5fa;';
+  }
+  if (d.hasExtraPhone) style = 'border-left:4px solid #f97316;background:linear-gradient(to right,#1c1208,transparent 60%);';
+  if (d.progressStatus==='BEHIND'||d.progressStatus==='AT_RISK') style = `border-left:4px solid #ef4444;`;
+  return style;
+}
+
+// ── Main render ──
+function render() {
+  renderGlobalBar();
+  renderFilters();
+  renderDriverList();
+  document.getElementById('driverCount').textContent = Object.keys(memory.drivers||{}).length + ' drivers';
+}
+
+function renderGlobalBar() {
+  const drivers = getFilteredDrivers('ALL');
+  let remaining=0, total=0;
+  drivers.forEach(d => {
+    const del = Math.max(0,(d.remainingPkgs||0)-(d.returns||0)-(d.missing||0));
+    remaining += d.state==='FINISHED' ? 0 : del;
+    total += Math.max(d.totalPkgs||0, d.remainingPkgs||0);
+  });
+  const pct = total > 0 ? Math.min(100,Math.max(0,((total-remaining)/total)*100)) : (total===0?100:0);
+  const allDone = total===0||(total>0&&remaining===0);
+  document.getElementById('pkgLabel').textContent = remaining.toLocaleString() + ' / ' + total.toLocaleString();
+  const bar = document.getElementById('pkgBar');
+  bar.style.width = pct + '%';
+  bar.className = 'gpb-fill' + (allDone ? '' : ' animated');
+}
+
+function getFilteredDrivers(filter) {
+  const raw = Object.entries(memory.drivers||{}).map(([id,d])=>({id,...d})).filter(d => {
+    if (d.isGhost || d.isRemoved || d.isBaseline) return false;
+    if (d.state==='FINISHED' && !isActiveToday(d)) return false;
+    return true;
+  });
+  const active = raw.filter(d=>d.state!=='FINISHED');
+  const removed = Object.entries(memory.drivers||{}).map(([id,d])=>({id,...d})).filter(d=>d.isRemoved);
+
+  switch(filter) {
+    case 'ALL': return raw;
+    case 'ON_BREAK': return active.filter(d=>d.state==='ON BREAK');
+    case 'NO_BREAKS': return raw.filter(d=>d.hasNoBreaks);
+    case 'INACTIVE': return active.filter(d=>d.state==='INACTIVE');
+    case 'BEHIND_AT_RISK': return active.filter(d=>d.progressStatus==='BEHIND'||d.progressStatus==='AT_RISK');
+    case 'RETURNS': return raw.filter(d=>(d.returns||0)>0||(d.returnedTbas&&d.returnedTbas.length>0));
+    case 'MISSING': return [...raw.filter(d=>(d.missing||0)>0), ...removed.filter(d=>!d._staleHidden&&!d.isBaseline)];
+    case 'COMPLETED': return raw.filter(d=>d.state==='FINISHED'&&isActiveToday(d));
+    case 'HELPING': return raw.filter(d=>d.isHelper);
+    default: return raw;
+  }
+}
+
+function getCounts() {
+  const raw = Object.entries(memory.drivers||{}).map(([id,d])=>({id,...d})).filter(d=>!d.isGhost&&!d.isRemoved&&!d.isBaseline&&!(d.state==='FINISHED'&&!isActiveToday(d)));
+  const active = raw.filter(d=>d.state!=='FINISHED');
+  const removed = Object.entries(memory.drivers||{}).map(([id,d])=>({id,...d})).filter(d=>d.isRemoved);
+  const totalReturned = Object.values(memory.drivers||{}).reduce((s,d)=>s+(d.returnedTbas&&d.returnedTbas.length?d.returnedTbas.length:0),0);
+  return {
+    ALL: raw.length,
+    ON_BREAK: active.filter(d=>d.state==='ON BREAK').length,
+    NO_BREAKS: raw.filter(d=>d.hasNoBreaks).length,
+    INACTIVE: active.filter(d=>d.state==='INACTIVE').length,
+    BEHIND_AT_RISK: active.filter(d=>d.progressStatus==='BEHIND'||d.progressStatus==='AT_RISK').length,
+    RETURNS: totalReturned,
+    MISSING: raw.filter(d=>(d.missing||0)>0).length + removed.filter(d=>!d._staleHidden&&!d.isBaseline).length,
+    COMPLETED: raw.filter(d=>d.state==='FINISHED'&&isActiveToday(d)).length,
+    HELPING: raw.filter(d=>d.isHelper).length,
+  };
+}
+
+function renderFilters() {
+  const c = getCounts();
+  const defs = [
+    {id:'ALL',label:'All',c:c.ALL},
+    {id:'ON_BREAK',label:'☕ Break',c:c.ON_BREAK},
+    {id:'NO_BREAKS',label:'⏰ No Brk',c:c.NO_BREAKS},
+    {id:'INACTIVE',label:'⏸ Inactive',c:c.INACTIVE},
+    {id:'BEHIND_AT_RISK',label:'⚠ Behind',c:c.BEHIND_AT_RISK},
+    {id:'RETURNS',label:'↩ Returns',c:c.RETURNS},
+    {id:'MISSING',label:'👁 Missing',c:c.MISSING},
+    {id:'COMPLETED',label:'✓ Done',c:c.COMPLETED},
+    {id:'HELPING',label:'🤝 Helping',c:c.HELPING},
+  ];
+  document.getElementById('filterTabs').innerHTML = defs.map(f =>
+    `<button class="fbtn ${activeFilter===f.id?'active':''}" onclick="setFilter('${f.id}')">${f.label} (${f.c})</button>`
+  ).join('');
+}
+
+function setFilter(f) {
+  activeFilter = f;
+  renderFilters();
+  renderDriverList();
+}
+
+function renderDriverList() {
+  let drivers = getFilteredDrivers(activeFilter);
+
+  // Apply search filter
+  if (searchQuery) {
+    drivers = drivers.filter(d => {
+      const name = (d.name||'').toLowerCase();
+      const route = (d.route||'').toLowerCase();
+      return name.includes(searchQuery) || route.includes(searchQuery);
+    });
+  }
+
+  // Sort: pinned first, then sweepers, then by route
+  drivers.sort((a,b) => {
+    if (a.isPinned && !b.isPinned) return -1;
+    if (!a.isPinned && b.isPinned) return 1;
+    if (a.isSweeper && !b.isSweeper) return -1;
+    if (!a.isSweeper && b.isSweeper) return 1;
+    if (a.isFlexRoute && !b.isFlexRoute) return 1;
+    if (!a.isFlexRoute && b.isFlexRoute) return -1;
+    return (a.route||'').localeCompare(b.route||'');
+  });
+
+  const el = document.getElementById('driverList');
+  if (drivers.length === 0) {
+    el.innerHTML = `<div class="empty"><div class="icon">${activeFilter==='ALL'?'📡':'🔍'}</div><p>${searchQuery?'No drivers match "'+searchQuery+'"':'No drivers in this filter'}</p></div>`;
+    return;
+  }
+
+  el.innerHTML = drivers.map(d => buildCard(d)).join('');
+}
+
+function buildCard(d) {
+  const displayName = abbreviateName(d.name);
+  const sc = getStateColor(d.state, d);
+  const stopsRemaining = (d.inspectionDone||d.manuallyDelivered) ? 0 : Math.max(0,(d.stopsTotal||0)-(d.stopsCompleted||0)-(d.missing||0)-(d.returns||0));
+  const deliverablePkgs = (d.inspectionDone||d.manuallyDelivered) ? 0 : Math.max(0,(d.remainingPkgs||0)-(d.returns||0)-(d.missing||0));
+  const stopsPct = (d.stopsTotal||0)>0 ? Math.min(100,(d.stopsCompleted||0)/(d.stopsTotal||1)*100) : 0;
+  const lastDel = formatTime(d.lastDeliveryTime);
+  const style = getCardStyle(d);
+  const state = getDisplayState(d);
+  const gpsDot = getGpsDot(d);
+  const vehId = d.vehicleId || '';
+
+  // Inspection done compact card
+  if (d.inspectionDone && !d.isRemoved) {
+    const label = d.isSweeper ? '<span style="color:#fb923c;font-weight:800">🧹 SWP</span>'
+                : d.isFlexRoute ? '<span style="color:#a855f7;font-weight:800">📦 FLX</span>'
+                : `<span style="color:#fff;font-weight:800">${d.route||''}</span>`;
+    const pkgsDone = Math.max(0,(d.totalPkgs||0)-deliverablePkgs);
+    return `<div class="dcard insp-compact" style="${style}" onclick="openDriverModal('${d.id}')">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:4px">
+        <div style="display:flex;align-items:center;gap:4px;min-width:0;overflow:hidden">
+          ${gpsDot}${label}
+          <span style="color:#d1d5db;font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${displayName}</span>
+          ${vehId?`<span style="color:var(--fg3);font-size:9px">${vehId}</span>`:''}
+        </div>
+        <span class="badge" style="background:#22c55e40;color:#22c55e;font-size:8px;flex-shrink:0">${d.inspectionManual?'📋':'✓'} INSP DONE</span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:2px">
+        <span style="font-size:10px;color:#e5e7eb;padding-left:20px">${d.stopsCompleted||0} Stops | ${pkgsDone} Pkgs ✅</span>
+        <span style="font-size:10px;color:var(--fg3)">${lastDel}</span>
+      </div>
+    </div>`;
+  }
+
+  // Build badges
+  let badges = [];
+  if (d.gpsAtStation && d.state!=='AT STATION') badges.push({bg:'#818cf840',fg:'#818cf8',t:'AT STATION'});
+  if (d._confirmedDeparture && !d.firstDeliveryTime && !(d.stopsCompleted||0) && d.state!=='DEPARTED' && !d.gpsAtStation && d.state!=='AT STATION' && !d.inspectionDone)
+    badges.push({bg:'#06b6d440',fg:'#06b6d4',t:'🚗 DEPARTED'});
+  if (d._enteredServiceArea && d.state!=='EN ROUTE' && !d.inspectionDone)
+    badges.push({bg:'#8b5cf640',fg:'#8b5cf6',t:'📍 EN ROUTE'});
+  if (d.hasExtraPhone) badges.push({bg:'#f9731640',fg:'#f97316',t:`📱 ${(d.extraPhoneCount||1)===1?'1x':'x'+(d.extraPhoneCount||1)} PHONE`});
+  if (d.progressStatus==='BEHIND' && !d.isSweeper && !d.isFlexRoute && !d.inspectionDone)
+    badges.push({bg:'#ef444440',fg:'#ef4444',t:'BEHIND'});
+  if (d.progressStatus==='AT_RISK' && !d.isSweeper && !d.isFlexRoute && !d.inspectionDone)
+    badges.push({bg:'#ef444440',fg:'#ef4444',t:'AT RISK'});
+  if (d.manuallyDelivered && !d.inspectionDone) badges.push({bg:'#10b98140',fg:'#10b981',t:'✅ MANUAL'});
+  if (d.gotGas && d.state!=='GETTING GAS') badges.push({bg:'#f59e0b40',fg:'#fde68a',t:'⛽✅'});
+  if ((d.missing||0)>0) badges.push({bg:'#d946ef40',fg:'#d946ef',t:`❓ ${d.missing} Missing`});
+  if ((d.returns||0)>0) badges.push({bg:'#ef444440',fg:'#ef4444',t:`🔙 ${d.returns}`});
+  if (d.coveredBySweeper && !d.isSweeper && !d.isFlexRoute) badges.push({bg:'#fb923c40',fg:'#fb923c',t:`🧹 ${d.coveredBySweeperName||'Sweeper'}`});
+
+  // State badge
+  const showStateBadge = !(d.inspectionDone || (d.state==='ON BREAK' && !d.isSweeper && !d.isFlexRoute && !d.isHelper));
+  const stateBadgeBg = d.isSweeper||d.isFlexRoute||d.isHelper ? 'rgba(0,0,0,.35)' : sc+'40';
+  const stateBadgeFg = d.isSweeper||d.isFlexRoute||d.isHelper ? '#e5e7eb' : sc;
+
+  // Break badge for non-special drivers
+  let breakBadge = '';
+  if (d.state==='ON BREAK' && !d.isSweeper && !d.isFlexRoute && !d.isHelper && !d.inspectionDone) {
+    const mins = d.currentBreakStart ? Math.floor((Date.now()-d.currentBreakStart)/60000) : 0;
+    breakBadge = `<span class="badge" style="background:#3b82f640;color:#3b82f6">☕ ON BREAK${mins?' ('+mins+'m)':''}</span>`;
+  }
+
+  // Inactive duration
+  let idleStr = '';
+  if (d.state==='INACTIVE' && d.currentInactiveStart) {
+    const mins = Math.floor((Date.now()-d.currentInactiveStart)/60000);
+    if (mins > 0) idleStr = `<div class="idle-mins">Idle for: ${mins} mins</div>`;
+  }
+
+  // Route label
+  let routeLabel;
+  if (d.isSweeper) routeLabel = '<span style="color:#fb923c;font-size:12px;font-weight:800">🧹 SWEEPER</span>';
+  else if (d.isFlexRoute) routeLabel = '<span style="color:#a855f7;font-size:12px;font-weight:800">📦 FLEX</span>';
+  else routeLabel = `<span class="route">${d.route||'?'}</span>`;
+
+  const extraClass = d.isSweeper?'sweeper':d.isHelper?'helper':d.isFlexRoute?'flex-route':'';
+
+  return `<div class="dcard ${extraClass}" style="${style}" onclick="openDriverModal('${d.id}')">
+    <div class="dcard-hdr">
+      <div class="dcard-left">
+        <div class="dcard-name">
+          ${gpsDot}${d.isPinned?'📌 ':''}${routeLabel}
+          <span class="dname">${displayName}</span>
+        </div>
+        ${vehId?`<div class="dcard-veh">${vehId}</div>`:''}
+      </div>
+      <div class="dcard-right">
+        <div class="dcard-bar"><div class="dcard-bar-fill" style="width:${stopsPct}%;background:${sc}"></div></div>
+        <span class="dcard-time">${lastDel}</span>
+      </div>
+    </div>
+    <div class="badge-row">
+      ${showStateBadge?`<span class="badge" style="background:${stateBadgeBg};color:${stateBadgeFg}">${state}</span>`:''}
+      ${breakBadge}
+      ${badges.map(b=>`<span class="badge" style="background:${b.bg};color:${b.fg}">${b.t}</span>`).join('')}
+    </div>
+    ${idleStr}
+    <div class="dcard-stats">
+      <span class="stat">Pace: <b>${d.pace||'—'}</b></span>
+      <span class="sep">|</span>
+      <span class="stat">Stops: <b>${stopsRemaining}</b></span>
+      <span class="sep">|</span>
+      <span class="stat">Pkgs: <b>${deliverablePkgs}</b></span>
+      <span class="sep">|</span>
+      <span class="stat">Done: <b>${d.stopsCompleted||0}/${d.stopsTotal||0}</b></span>
+    </div>
+  </div>`;
+}
+
+// ── Driver detail modal ──
+function openDriverModal(tid) {
+  const d = memory.drivers && memory.drivers[tid];
+  if (!d) return;
+  const displayName = abbreviateName(d.name);
+  const stopsRemaining = (d.inspectionDone||d.manuallyDelivered) ? 0 : Math.max(0,(d.stopsTotal||0)-(d.stopsCompleted||0)-(d.missing||0)-(d.returns||0));
+  const deliverablePkgs = (d.inspectionDone||d.manuallyDelivered) ? 0 : Math.max(0,(d.remainingPkgs||0)-(d.returns||0)-(d.missing||0));
+  const pkgTotal = Math.max(d.totalPkgs||0,d.remainingPkgs||0);
+  const pkgsDone = Math.max(0, pkgTotal - deliverablePkgs);
+  const stopsPct = (d.stopsTotal||0)>0 ? Math.min(100,(d.stopsCompleted||0)/(d.stopsTotal||1)*100) : 0;
+  const sc = getStateColor(d.state, d);
+  const state = getDisplayState(d);
+
+  // Break history
+  let breakHtml = '';
+  if (d.breakHistory && d.breakHistory.length > 0) {
+    breakHtml = `<div style="margin-top:10px"><div style="font-weight:700;font-size:12px;color:var(--fg2);margin-bottom:4px">Break History</div>`;
+    d.breakHistory.forEach((b,i) => {
+      const dur = b.duration ? Math.floor(b.duration/60000) : '?';
+      breakHtml += `<div style="font-size:11px;color:#e5e7eb;padding:3px 0;border-bottom:1px solid var(--bg3)">
+        #${i+1}: ${formatTime(b.start)} → ${formatTime(b.end)} (${dur} min)
+      </div>`;
+    });
+    breakHtml += '</div>';
+  }
+
+  // Inactivity log
+  let inactHtml = '';
+  if (d.inactivityLog && d.inactivityLog.length > 0) {
+    inactHtml = `<div style="margin-top:10px"><div style="font-weight:700;font-size:12px;color:var(--fg2);margin-bottom:4px">Inactivity History</div>`;
+    d.inactivityLog.forEach((l,i) => {
+      inactHtml += `<div style="font-size:11px;color:#f59e0b;padding:3px 0;border-bottom:1px solid var(--bg3)">
+        ${formatTime(l.start)} — ${l.duration} min
+      </div>`;
+    });
+    inactHtml += '</div>';
+  }
+
+  // Pace history
+  let paceHtml = '';
+  if (d.stopSnapshots && d.stopSnapshots.length > 2) {
+    const last10 = d.stopSnapshots.slice(-10);
+    paceHtml = `<div style="margin-top:10px"><div style="font-weight:700;font-size:12px;color:var(--fg2);margin-bottom:4px">Recent Stop Snapshots</div>`;
+    last10.forEach(s => {
+      paceHtml += `<div style="font-size:10px;color:#e5e7eb;padding:2px 0">${formatTime(s.ts)} — ${s.stops} stops, ${s.pkgs||'?'} pkgs</div>`;
+    });
+    paceHtml += '</div>';
+  }
+
+  document.getElementById('modalContent').innerHTML = `
+    <div class="modal-hdr">
+      <h3 style="display:flex;align-items:center;gap:6px">
+        ${getGpsDot(d)}
+        <span style="color:${sc};font-weight:800">${d.route||'?'}</span>
+        ${displayName}
+      </h3>
+      <button class="modal-close" onclick="closeModal()">✕ Close</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+      <div style="background:var(--bg2);padding:8px;border-radius:8px;text-align:center">
+        <div style="font-size:10px;color:var(--fg3)">Status</div>
+        <div style="font-size:14px;font-weight:700;color:${sc}">${state}</div>
+      </div>
+      <div style="background:var(--bg2);padding:8px;border-radius:8px;text-align:center">
+        <div style="font-size:10px;color:var(--fg3)">Pace</div>
+        <div style="font-size:14px;font-weight:700">${d.pace||'—'}</div>
+      </div>
+    </div>
+
+    <div style="background:var(--bg2);padding:10px;border-radius:8px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--fg2);margin-bottom:4px">
+        <span>Progress</span><span style="color:#fff;font-weight:700">${Math.round(stopsPct)}%</span>
+      </div>
+      <div style="background:var(--bg3);height:8px;border-radius:4px;overflow:hidden">
+        <div style="width:${stopsPct}%;height:100%;background:${sc};border-radius:4px"></div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px">
+      <div style="background:var(--bg2);padding:8px;border-radius:6px;text-align:center">
+        <div style="font-size:9px;color:var(--fg3)">Remaining</div>
+        <div style="font-size:15px;font-weight:700">${stopsRemaining}</div>
+        <div style="font-size:9px;color:var(--fg3)">stops</div>
+      </div>
+      <div style="background:var(--bg2);padding:8px;border-radius:6px;text-align:center">
+        <div style="font-size:9px;color:var(--fg3)">Delivered</div>
+        <div style="font-size:15px;font-weight:700;color:var(--green)">${d.stopsCompleted||0}</div>
+        <div style="font-size:9px;color:var(--fg3)">of ${d.stopsTotal||0}</div>
+      </div>
+      <div style="background:var(--bg2);padding:8px;border-radius:6px;text-align:center">
+        <div style="font-size:9px;color:var(--fg3)">Packages</div>
+        <div style="font-size:15px;font-weight:700">${deliverablePkgs}</div>
+        <div style="font-size:9px;color:var(--fg3)">of ${pkgTotal}</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
+      <div style="background:var(--bg2);padding:6px 10px;border-radius:6px">
+        <span style="font-size:10px;color:var(--fg3)">Vehicle</span>
+        <div style="font-size:13px;font-weight:700">${d.vehicleId||'—'}</div>
+      </div>
+      <div style="background:var(--bg2);padding:6px 10px;border-radius:6px">
+        <span style="font-size:10px;color:var(--fg3)">Last Delivery</span>
+        <div style="font-size:13px;font-weight:700">${formatTime(d.lastDeliveryTime)}</div>
+      </div>
+      <div style="background:var(--bg2);padding:6px 10px;border-radius:6px">
+        <span style="font-size:10px;color:var(--fg3)">First Delivery</span>
+        <div style="font-size:13px;font-weight:700">${formatTime(d.firstDeliveryTime)}</div>
+      </div>
+      <div style="background:var(--bg2);padding:6px 10px;border-radius:6px">
+        <span style="font-size:10px;color:var(--fg3)">Returns / Missing</span>
+        <div style="font-size:13px;font-weight:700">${d.returns||0} / ${d.missing||0}</div>
+      </div>
+    </div>
+
+    ${d.inspectionDone?`<div style="background:#22c55e20;border:1px solid #22c55e40;border-radius:8px;padding:8px;text-align:center;margin-bottom:10px">
+      <span style="color:#22c55e;font-weight:700;font-size:13px">${d.inspectionManual?'📋':'✓'} INSPECTION DONE</span>
+      ${d.inspectionDoneTime?`<div style="font-size:10px;color:var(--fg3);margin-top:2px">at ${formatTime(d.inspectionDoneTime)}</div>`:''}
+    </div>`:''}
+
+    ${d.isSweeper&&Array.isArray(d.allRoutes)&&d.allRoutes.length>=2?`<div style="background:var(--bg2);padding:6px 10px;border-radius:6px;margin-bottom:8px">
+      <span style="font-size:10px;color:var(--fg3)">Sweeper Routes</span>
+      <div style="font-size:12px;color:#fb923c;font-weight:600;margin-top:2px">${[...new Set(d.allRoutes)].join(', ')}</div>
+    </div>`:''}
+
+    ${breakHtml}
+    ${inactHtml}
+    ${paceHtml}
+
+    <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--bg3);font-size:10px;color:var(--fg3)">
+      TID: ${d.id || '—'} · First seen: ${formatTime(d.firstSeen)} · Station: ${memory.station||currentStation}
+    </div>
+  `;
+
+  document.getElementById('driverModal').classList.add('open');
+}
+
+function closeModal() { document.getElementById('driverModal').classList.remove('open'); }
+
+// ── Pull to refresh (touch gesture) ──
+let touchStartY = 0;
+const listWrap = document.getElementById('listWrap');
+listWrap.addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; }, {passive:true});
+listWrap.addEventListener('touchmove', e => {
+  if (listWrap.scrollTop === 0 && e.touches[0].clientY - touchStartY > 60) {
+    document.getElementById('ptrIndicator').classList.add('visible');
+  }
+}, {passive:true});
+listWrap.addEventListener('touchend', () => {
+  const ptr = document.getElementById('ptrIndicator');
+  if (ptr.classList.contains('visible')) {
+    ptr.textContent = '↻ Refreshing...';
+    fetchData().then(() => {
+      ptr.classList.remove('visible');
+      ptr.textContent = '↻ Pull to refresh';
+    });
+  }
+});
+
+// ── Keep sync label updated every second ──
+setInterval(() => {
+  if (lastFetch > 0) {
+    const ago = Math.round((Date.now() - lastFetch) / 1000);
+    const dot = document.getElementById('syncDot');
+    const label = document.getElementById('syncLabel');
+    if (ago < 5) {
+      label.textContent = 'Synced just now';
+    } else if (ago < 60) {
+      label.textContent = `Synced ${ago}s ago`;
+    } else {
+      label.textContent = `Synced ${Math.floor(ago/60)}m ago`;
+    }
+    // Pulse dot based on freshness
+    if (ago < REFRESH_INTERVAL/1000) dot.classList.add('live');
+    else dot.classList.remove('live');
+  }
+}, 1000);
+
+// ── Settings URL change ──
+function changeUrl() {
+  const newUrl = prompt('Enter Cloud Sync URL:', cloudUrl);
+  if (newUrl && newUrl.startsWith('http')) {
+    cloudUrl = newUrl.trim();
+    localStorage.setItem(LS_KEY_URL, cloudUrl);
+    fetchData();
+  }
+}
+
+// ── Init ──
+boot();
+</script>
+</body>
+</html>
