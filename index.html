@@ -5,16 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Dispatch Radar">
+<meta name="apple-mobile-web-app-title" content="Mobile Amazon Radar">
 <meta name="theme-color" content="#111827">
 <meta name="mobile-web-app-capable" content="yes">
-<title>Dispatch Radar</title>
+<title>Mobile Amazon Radar</title>
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%23111827'/%3E%3Ccircle cx='90' cy='85' r='50' fill='none' stroke='%2310b981' stroke-width='5'/%3E%3Ccircle cx='90' cy='85' r='6' fill='%2310b981'/%3E%3Cline x1='90' y1='85' x2='90' y2='50' stroke='%2310b981' stroke-width='4' stroke-linecap='round'/%3E%3Ctext x='90' y='155' text-anchor='middle' fill='%2310b981' font-size='18' font-weight='bold' font-family='system-ui'%3ERADAR%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 /* ═══════════════════════════════════════════════
-   DISPATCH RADAR MOBILE — V3.0
+   MOBILE AMAZON RADAR — V4.0
    By: Andrismar T.
+   Desktop-parity mobile companion
    ═══════════════════════════════════════════════ */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -44,6 +45,58 @@ html, body {
   height: 100%; overflow: hidden;
   padding-top: var(--safe-top);
   padding-bottom: var(--safe-bot);
+}
+
+/* ── PIN Lock Screen ── */
+.pin-screen {
+  position: fixed; inset: 0; z-index: 9999;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 16px; padding: 30px;
+}
+
+.pin-screen h2 { font-size: 22px; color: var(--green); font-weight: 800; }
+.pin-screen p { font-size: 12px; color: var(--fg2); text-align: center; }
+
+.pin-input {
+  width: 200px; text-align: center;
+  background: var(--bg2); border: 2px solid var(--bg3);
+  color: #fff; padding: 14px; border-radius: 10px;
+  font-size: 24px; letter-spacing: 12px;
+  outline: none; font-weight: 800;
+}
+
+.pin-input:focus { border-color: var(--green); }
+
+.pin-submit {
+  padding: 12px 32px; background: var(--green);
+  color: #fff; border: none; border-radius: 8px;
+  font-size: 15px; font-weight: 700; cursor: pointer;
+}
+
+.pin-error { color: var(--red); font-size: 11px; font-weight: 600; min-height: 16px; }
+
+/* ── Notify When Bar ── */
+.notify-bar {
+  padding: 4px 12px 2px; flex-shrink: 0;
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  font-size: 10px; color: var(--fg2);
+  background: var(--bg2); border-bottom: 1px solid var(--bg3);
+}
+
+.notify-bar label {
+  display: flex; align-items: center; gap: 3px;
+  cursor: pointer; white-space: nowrap;
+}
+
+.notify-bar input[type="checkbox"] {
+  width: 14px; height: 14px; accent-color: var(--red);
+}
+
+.notify-bar .notify-title {
+  color: var(--amber); font-weight: 700; font-size: 10px;
+  display: flex; align-items: center; gap: 3px;
 }
 
 /* ── Header ── */
@@ -129,10 +182,7 @@ html, body {
 }
 
 .tool-btn:active { transform: scale(.95); }
-
-.tool-btn.synced {
-  border-color: var(--green); color: var(--green);
-}
+.tool-btn.synced { border-color: var(--green); color: var(--green); }
 
 /* ── Sync status ── */
 .hdr-sync {
@@ -150,9 +200,7 @@ html, body {
 .sync-dot.err { background: var(--red); }
 
 /* ── Global progress bar ── */
-.gpb {
-  padding: 4px 12px; flex-shrink: 0;
-}
+.gpb { padding: 4px 12px; flex-shrink: 0; }
 
 .gpb-label {
   display: flex; justify-content: space-between;
@@ -247,7 +295,7 @@ html, body {
   display: flex; flex-direction: column; gap: 4px;
 }
 
-/* ── Driver card ── */
+/* ── Driver card (Desktop-matched layout) ── */
 .dcard {
   background: var(--bg2); border-radius: 6px;
   padding: 7px 9px; cursor: pointer;
@@ -314,15 +362,18 @@ html, body {
   white-space: nowrap; line-height: 1.4;
 }
 
-.dcard-stats {
-  display: flex; justify-content: space-between;
-  align-items: baseline; margin-top: 2px;
-  font-size: 10px; gap: 2px;
+/* ── Desktop-matched stats rows ── */
+.dcard-stats-block {
+  margin-top: 3px; font-size: 10px; line-height: 1.5;
+  padding-left: 1px;
 }
 
-.dcard-stats .stat { color: #e5e7eb; font-weight: 600; }
-.dcard-stats .stat b { color: #fff; font-weight: 700; }
-.dcard-stats .sep { color: var(--bg3); font-size: 8px; }
+.dcard-stats-block .s-row {
+  display: flex; gap: 6px; color: #e5e7eb; font-weight: 600;
+}
+
+.dcard-stats-block .s-row b { color: #fff; font-weight: 700; }
+.dcard-stats-block .s-row .s-label { color: var(--fg2); }
 
 .gps-dot {
   display: inline-block; width: 6px; height: 6px;
@@ -348,7 +399,7 @@ html, body {
 
 .modal-card {
   background: var(--bg); border-radius: 16px 16px 0 0;
-  width: 100%; max-width: 500px; max-height: 90vh;
+  width: 100%; max-width: 500px; max-height: 92vh;
   overflow-y: auto; -webkit-overflow-scrolling: touch;
   padding: 14px 12px calc(14px + var(--safe-bot));
   animation: slideUp .25s ease;
@@ -395,6 +446,25 @@ html, body {
 
 .act-btn:active { transform: scale(.95); }
 .act-btn.on { background: var(--blue); color: #fff; }
+
+/* ── Pace chart ── */
+.pace-chart-wrap {
+  display: flex; gap: 2px; align-items: flex-end;
+  height: 50px; overflow-x: auto;
+  padding: 4px 0; scrollbar-width: none;
+}
+.pace-chart-wrap::-webkit-scrollbar { display: none; }
+
+.pace-bar {
+  min-width: 22px; border-radius: 3px 3px 0 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: flex-end;
+  font-size: 7px; font-weight: 700; color: #fff;
+  transition: height .3s;
+}
+
+.pace-bar .pace-val { margin-top: 2px; font-size: 7px; }
+.pace-bar .pace-hr { font-size: 6px; color: var(--fg3); margin-top: 1px; }
 
 /* ── Map overlay ── */
 .map-overlay {
@@ -450,6 +520,29 @@ html, body {
 }
 
 .debrief-textarea:focus { border-color: var(--blue); }
+
+/* ── Debrief toggle tabs ── */
+.debrief-tabs {
+  display: flex; gap: 0; margin-bottom: 10px;
+  border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--bg3);
+}
+
+.debrief-tab {
+  flex: 1; padding: 8px; text-align: center;
+  font-size: 11px; font-weight: 700;
+  cursor: pointer; background: var(--bg2);
+  color: var(--fg3); transition: all .15s;
+  border: none;
+}
+
+.debrief-tab.active {
+  background: var(--amber); color: #000;
+}
+
+.debrief-tab:last-child.active {
+  background: var(--indigo); color: #fff;
+}
 
 /* ── Staples overlay ── */
 .staples-overlay {
@@ -553,16 +646,38 @@ html, body {
 
 .pulse-slow { animation: deadlinePulse 2.5s ease-in-out infinite; }
 .pulse-fast { animation: deadlinePulse 1s ease-in-out infinite; }
+
+/* ── Section inside modal ── */
+.modal-section {
+  background: var(--bg2); border: 1px solid var(--bg3);
+  border-radius: 7px; padding: 8px; margin-bottom: 6px;
+}
+
+.modal-section-title {
+  font-size: 10px; font-weight: 700; margin-bottom: 4px;
+}
 </style>
 </head>
 <body>
 <div id="app">
 
+  <!-- ═══ PIN Lock Screen ═══ -->
+  <div id="pinScreen" class="pin-screen" style="display:none">
+    <h2>🔒 Mobile Amazon Radar</h2>
+    <p>Enter your access PIN to continue.</p>
+    <input id="pinInput" class="pin-input" type="password" maxlength="6" inputmode="numeric" pattern="[0-9]*" placeholder="••••">
+    <button class="pin-submit" onclick="verifyPin()">Unlock</button>
+    <div class="pin-error" id="pinError"></div>
+    <p style="font-size:8px;color:var(--fg3);font-style:italic;margin-top:12px">Dispatch Radar — By: Andrismar T.</p>
+  </div>
+
   <!-- ═══ Setup Screen ═══ -->
   <div id="setup" class="setup-screen" style="display:none">
-    <h2>Dispatch Radar</h2>
+    <h2>Mobile Amazon Radar</h2>
     <p style="font-size:12px;color:var(--fg2)">Enter Cloud Sync URL to connect.</p>
     <input id="setup-url" class="setup-input" placeholder="https://script.google.com/macros/s/.../exec">
+    <p style="font-size:11px;color:var(--fg2);margin-top:8px">Set Access PIN (4-6 digits):</p>
+    <input id="setup-pin" class="setup-input" type="password" maxlength="6" inputmode="numeric" pattern="[0-9]*" placeholder="PIN (e.g. 1234)" style="max-width:200px;text-align:center;letter-spacing:6px">
     <button class="setup-submit" onclick="saveSetup()">Connect</button>
     <p style="font-size:8px;color:var(--fg3);font-style:italic">By: Andrismar T.</p>
   </div>
@@ -574,13 +689,14 @@ html, body {
     <div class="hdr">
       <div class="hdr-top">
         <div class="hdr-brand">
-          <div class="title"><span class="dot"></span> Dispatch Radar <span id="stationBadge" class="hdr-station" onclick="openStationPicker()">DJE5</span></div>
+          <div class="title"><span class="dot"></span> Mobile Amazon Radar <span id="stationBadge" class="hdr-station" onclick="openStationPicker()">DJE5</span></div>
           <div class="station-line">
             <span class="sig">By: Andrismar T.</span>
           </div>
         </div>
         <div class="hdr-controls">
           <button class="hdr-btn" onclick="forceRefresh()" id="refreshBtn" title="Refresh">↻</button>
+          <button class="hdr-btn" onclick="openSettings()" title="Settings">⚙</button>
         </div>
       </div>
     </div>
@@ -591,6 +707,8 @@ html, body {
       <button class="tool-btn" id="syncBtn" onclick="forceRefresh()">☁️ Sync</button>
       <button class="tool-btn" onclick="openStaples()">🏪 Staples</button>
       <button class="tool-btn" onclick="openMap()">🗺 Map</button>
+      <button class="tool-btn" onclick="openReports()">📊 Reports</button>
+      <button class="tool-btn" onclick="openExport()">📤 Export</button>
     </div>
 
     <!-- Sync status -->
@@ -609,6 +727,18 @@ html, body {
       <div class="gpb-track">
         <div class="gpb-fill" id="pkgBar" style="width:0%"></div>
       </div>
+    </div>
+
+    <!-- Notify When bar -->
+    <div class="notify-bar" id="notifyBar">
+      <span class="notify-title">⚠ Notify When:</span>
+      <label><input type="checkbox" id="nfReturns" onchange="saveNotifyPrefs()"> ↩ Returns</label>
+      <label><input type="checkbox" id="nfNoBreak" onchange="saveNotifyPrefs()" checked> ⏰ &lt;20 NoBrk</label>
+      <label><input type="checkbox" id="nfNoBreakAll" onchange="saveNotifyPrefs()" checked> No Break</label>
+      <label><input type="checkbox" id="nfIdle" onchange="saveNotifyPrefs()"> ⏸ Idle</label>
+      <label><input type="checkbox" id="nf10Stops" onchange="saveNotifyPrefs()"> 10 Stops</label>
+      <label><input type="checkbox" id="nf5Stops" onchange="saveNotifyPrefs()"> 5 Stops</label>
+      <label><input type="checkbox" id="nfDone" onchange="saveNotifyPrefs()"> ✅ Done</label>
     </div>
 
     <!-- Search -->
@@ -662,15 +792,10 @@ html, body {
   <div class="debrief-overlay" id="debriefOverlay">
     <div class="debrief-hdr">
       <button class="hdr-btn" onclick="closeDebrief()">← Back</button>
-      <span style="font-weight:700;color:var(--green)">📋 Morning Debrief</span>
+      <span style="font-weight:700;color:var(--green)" id="debriefTitle">📋 Morning Debrief</span>
       <button class="hdr-btn" onclick="saveDebriefToCloud()" id="debriefSaveBtn">💾 Save</button>
     </div>
-    <div class="debrief-body" id="debriefBody">
-      <p style="font-size:11px;color:var(--fg2);margin-bottom:8px">Paste or edit the morning debrief below. Saved data syncs with desktop.</p>
-      <textarea class="debrief-textarea" id="debriefText" placeholder="Paste morning debrief here...&#10;&#10;Attendance:&#10;- Driver 1&#10;- Driver 2&#10;&#10;Extra Phones:&#10;- Name (count)&#10;&#10;Sweeper:&#10;- Route info"></textarea>
-      <div id="debriefParsed" style="margin-top:10px"></div>
-      <p style="font-size:8px;color:var(--fg3);text-align:center;margin-top:12px;font-style:italic">Dispatch Radar — By: Andrismar T.</p>
-    </div>
+    <div class="debrief-body" id="debriefBody"></div>
   </div>
 
   <!-- ═══ Staples Overlay ═══ -->
@@ -683,15 +808,25 @@ html, body {
     <div class="debrief-body" id="staplesBody"></div>
   </div>
 
+  <!-- ═══ Settings Overlay ═══ -->
+  <div class="debrief-overlay" id="settingsOverlay">
+    <div class="debrief-hdr">
+      <button class="hdr-btn" onclick="closeSettings()">← Back</button>
+      <span style="font-weight:700;color:var(--green)">⚙ Settings</span>
+      <span></span>
+    </div>
+    <div class="debrief-body" id="settingsBody"></div>
+  </div>
+
 </div>
 
 <!-- ═══ JavaScript ═══ -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════
-//  DISPATCH RADAR MOBILE — V3.0
+//  MOBILE AMAZON RADAR — V4.0
 //  By: Andrismar T.
-//  Two-way sync with desktop via cloud command queue
+//  Desktop-parity mobile companion with PIN security
 // ═══════════════════════════════════════════════════════════
 
 // ── Configuration ──
@@ -700,10 +835,14 @@ const STATIONS = ['DJE5', 'DJZ6', 'DYY6', 'DNJ4'];
 const REFRESH_MS = 30000;
 const LS_URL = 'dispatch_radar_url';
 const LS_STA = 'dispatch_radar_station';
+const LS_PIN = 'dispatch_radar_pin';
+const LS_AUTHED = 'dispatch_radar_authed';
+const LS_NOTIFY = 'dispatch_radar_notify';
 
 let cloudUrl = CLOUD_URL || localStorage.getItem(LS_URL) || '';
 let currentStation = localStorage.getItem(LS_STA) || 'DJE5';
 let memory = {};
+let driverInfoMap = {};
 let lastFetch = 0;
 let refreshTimer = null;
 let activeFilter = 'ALL';
@@ -713,10 +852,63 @@ let sortMode = 0;
 const SORT_NAMES = ['Route', 'Stops ↓', 'Pkgs ↓', 'Behind', 'Pace'];
 let leafletMap = null;
 let mapMarkers = [];
+let debriefMode = 'morning'; // 'morning' or 'nightly'
+let nightlyReportData = null;
+
+// ═══════════════════════
+//  PIN SECURITY
+// ═══════════════════════
+
+function checkAuth() {
+  const pin = localStorage.getItem(LS_PIN);
+  if (!pin) {
+    // No PIN set — go to setup
+    return 'setup';
+  }
+  const authed = sessionStorage.getItem(LS_AUTHED);
+  if (authed === 'true') return 'authed';
+  return 'locked';
+}
+
+function verifyPin() {
+  const input = document.getElementById('pinInput').value.trim();
+  const stored = localStorage.getItem(LS_PIN);
+  if (input === stored) {
+    sessionStorage.setItem(LS_AUTHED, 'true');
+    document.getElementById('pinScreen').style.display = 'none';
+    boot();
+  } else {
+    document.getElementById('pinError').textContent = '✗ Incorrect PIN. Try again.';
+    document.getElementById('pinInput').value = '';
+    document.getElementById('pinInput').focus();
+  }
+}
+
+document.getElementById('pinInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') verifyPin();
+});
 
 // ═══════════════════════
 //  BOOT
 // ═══════════════════════
+
+function initApp() {
+  const state = checkAuth();
+  if (state === 'setup') {
+    document.getElementById('setup').style.display = 'flex';
+    document.getElementById('main').style.display = 'none';
+    document.getElementById('pinScreen').style.display = 'none';
+    return;
+  }
+  if (state === 'locked') {
+    document.getElementById('pinScreen').style.display = 'flex';
+    document.getElementById('setup').style.display = 'none';
+    document.getElementById('main').style.display = 'none';
+    setTimeout(() => document.getElementById('pinInput').focus(), 200);
+    return;
+  }
+  boot();
+}
 
 function boot() {
   if (!cloudUrl) {
@@ -725,6 +917,7 @@ function boot() {
     return;
   }
   document.getElementById('setup').style.display = 'none';
+  document.getElementById('pinScreen').style.display = 'none';
   const m = document.getElementById('main');
   m.style.display = 'flex';
   m.style.flexDirection = 'column';
@@ -732,16 +925,57 @@ function boot() {
   m.style.overflow = 'hidden';
   m.style.minHeight = '0';
   document.getElementById('stationBadge').textContent = currentStation;
+  loadNotifyPrefs();
   fetchData();
+  fetchDriverInfo();
   refreshTimer = setInterval(fetchData, REFRESH_MS);
+  // Refresh driver info every 5 minutes
+  setInterval(fetchDriverInfo, 300000);
 }
 
 function saveSetup() {
   const url = document.getElementById('setup-url').value.trim();
+  const pin = document.getElementById('setup-pin').value.trim();
   if (!url || !url.startsWith('http')) { alert('Enter a valid URL'); return; }
+  if (!pin || pin.length < 4) { alert('Enter a PIN (4-6 digits)'); return; }
   cloudUrl = url;
   localStorage.setItem(LS_URL, cloudUrl);
+  localStorage.setItem(LS_PIN, pin);
+  sessionStorage.setItem(LS_AUTHED, 'true');
   boot();
+}
+
+// ═══════════════════════
+//  NOTIFICATION PREFS
+// ═══════════════════════
+
+function loadNotifyPrefs() {
+  try {
+    const raw = localStorage.getItem(LS_NOTIFY);
+    if (raw) {
+      const p = JSON.parse(raw);
+      document.getElementById('nfReturns').checked = !!p.returns;
+      document.getElementById('nfNoBreak').checked = p.noBreak !== false;
+      document.getElementById('nfNoBreakAll').checked = p.noBreakAll !== false;
+      document.getElementById('nfIdle').checked = !!p.idle;
+      document.getElementById('nf10Stops').checked = !!p.s10;
+      document.getElementById('nf5Stops').checked = !!p.s5;
+      document.getElementById('nfDone').checked = !!p.done;
+    }
+  } catch(e) {}
+}
+
+function saveNotifyPrefs() {
+  const p = {
+    returns: document.getElementById('nfReturns').checked,
+    noBreak: document.getElementById('nfNoBreak').checked,
+    noBreakAll: document.getElementById('nfNoBreakAll').checked,
+    idle: document.getElementById('nfIdle').checked,
+    s10: document.getElementById('nf10Stops').checked,
+    s5: document.getElementById('nf5Stops').checked,
+    done: document.getElementById('nfDone').checked
+  };
+  localStorage.setItem(LS_NOTIFY, JSON.stringify(p));
 }
 
 // ═══════════════════════
@@ -768,12 +1002,46 @@ async function fetchData() {
       setSyncStatus('empty');
     }
   } catch (e) {
-    console.error('[Dispatch] Fetch error:', e);
+    console.error('[Radar] Fetch error:', e);
     setSyncStatus('error', e.message);
     if (memory.drivers) render();
   }
 
   isRefreshing = false;
+}
+
+// ── Driver Info (personal phone, email, flex) from cloud ──
+async function fetchDriverInfo() {
+  try {
+    const resp = await fetch(cloudUrl + '?action=driverInfo&station=' + currentStation, { mode: 'cors', cache: 'no-cache' });
+    const data = await resp.json();
+    if (data && data.drivers) {
+      driverInfoMap = data.drivers;
+      console.log('[Radar] Driver info loaded:', Object.keys(driverInfoMap).length, 'entries');
+    }
+  } catch(e) {
+    // Fallback: driver info not available via cloud, try extracting from memory
+    console.log('[Radar] Driver info endpoint not available, using memory data');
+  }
+}
+
+function getBestDriverInfo(name) {
+  if (!name || name === 'Unknown') return null;
+  // Exact match first
+  if (driverInfoMap[name]) return driverInfoMap[name];
+  // Fuzzy match: last name + first initial
+  const clean = name.toLowerCase().trim().replace(/[^a-z0-9\s]/g, '');
+  const parts = clean.split(/\s+/);
+  if (!parts.length) return null;
+  const first = parts[0], last = parts[parts.length - 1];
+  for (const [k, v] of Object.entries(driverInfoMap)) {
+    const kc = k.toLowerCase().trim().replace(/[^a-z0-9\s]/g, '');
+    const kp = kc.split(/\s+/);
+    if (!kp.length) continue;
+    const kf = kp[0], kl = kp[kp.length - 1];
+    if (kl === last && (kf.startsWith(first) || first.startsWith(kf))) return v;
+  }
+  return null;
 }
 
 function forceRefresh() {
@@ -811,6 +1079,20 @@ function setSyncStatus(status, detail) {
 async function sendCommand(type, tid, value, extra) {
   const cmd = { type, tid, value, ts: Date.now() };
   if (extra) Object.assign(cmd, extra);
+
+  // Optimistic local update
+  if (memory.drivers && memory.drivers[tid]) {
+    const d = memory.drivers[tid];
+    if (type === 'pin') d.isPinned = !!value;
+    if (type === 'sweeper') { d.isSweeper = !!value; if (value) { d.isPinned = true; d.isHelper = false; d.isFlexRoute = false; }}
+    if (type === 'helper') { d.isHelper = !!value; if (value) { d.isSweeper = false; d.isFlexRoute = false; }}
+    if (type === 'flex') { d.isFlexRoute = !!value; if (value) { d.isSweeper = false; d.isHelper = false; }}
+    if (type === 'delivered') d.manuallyDelivered = !!value;
+    if (type === 'inspectionDone') d.inspectionDone = !!value;
+    if (type === 'notify5') d.notify5 = !!value;
+    if (type === 'notifyDone') d.notifyDone = !!value;
+    render();
+  }
 
   try {
     await fetch(cloudUrl + '?action=commands&station=' + currentStation, {
@@ -860,8 +1142,10 @@ function selectStation(s) {
   document.getElementById('stationBadge').textContent = s;
   closeStationPicker();
   memory = {};
+  driverInfoMap = {};
   document.getElementById('driverList').innerHTML = '<div class="empty"><div class="spinner"></div></div>';
   fetchData();
+  fetchDriverInfo();
 }
 
 // ═══════════════════════
@@ -939,6 +1223,14 @@ function gpsDot(d) {
   else if (d.gpsAtStation) { c = '#818cf8'; }
   else { c = '#6b7280'; }
   return `<span class="gps-dot" style="background:${c};${sh ? 'box-shadow:' + sh : ''}"></span>`;
+}
+
+function gpsStatusText(d) {
+  if (d.gpsMoving && !d.gpsAtStation) return '🟢 Moving';
+  if (d.gpsDeparted) return '🔵 Departed';
+  if (d.gpsAtStation) return '🟣 At Station';
+  if (d.state === 'INACTIVE') return '🟡 Idle';
+  return '⚪ Unknown';
 }
 
 function dispState(d) {
@@ -1127,7 +1419,7 @@ function renderDriverList() {
 }
 
 // ═══════════════════════
-//  DRIVER CARD
+//  DRIVER CARD (Desktop-matched layout)
 // ═══════════════════════
 
 function buildCard(d) {
@@ -1142,8 +1434,13 @@ function buildCard(d) {
   const gd = gpsDot(d);
   const veh = d.vehicleId || '';
   const pkgTotal = Math.max(d.totalPkgs || 0, d.remainingPkgs || 0);
+  const stopsRem = sR;
+  const pkgsRem = dP;
+  const stopsDone = d.stopsCompleted || 0;
+  const stopsT = d.stopsTotal || 0;
+  const pkgsDone = Math.max(0, pkgTotal - dP);
 
-  // No-break warning check
+  // No-break warning
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
   const isAfter330 = (now.getHours() > 15) || (now.getHours() === 15 && now.getMinutes() >= 30);
   const noBreakWarn = isAfter330 && d.hasNoBreaks && !d.inspectionDone && !d.isRemoved &&
@@ -1154,7 +1451,6 @@ function buildCard(d) {
     const label = d.isSweeper ? '<span style="color:#fb923c;font-weight:800">🧹 SWP</span>'
       : d.isFlexRoute ? '<span style="color:#a855f7;font-weight:800">📦 FLX</span>'
       : `<span style="color:#fff;font-weight:800">${d.route || ''}</span>`;
-    const pkgsDone = Math.max(0, pkgTotal - dP);
     return `<div class="dcard" style="${style};padding:5px 8px" onclick="openModal('${d.id}')">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:4px">
         <div style="display:flex;align-items:center;gap:3px;min-width:0;overflow:hidden">
@@ -1163,8 +1459,9 @@ function buildCard(d) {
         </div>
         <span class="badge" style="background:#22c55e40;color:#22c55e">${d.inspectionManual ? '📋' : '✓'} INSP DONE</span>
       </div>
+      ${veh ? `<div class="dcard-veh">${veh}</div>` : ''}
       <div style="display:flex;justify-content:space-between;margin-top:2px">
-        <span style="font-size:9px;color:#e5e7eb;padding-left:16px">${d.stopsCompleted || 0} Stops | ${pkgsDone} Pkgs ✅</span>
+        <span style="font-size:9px;color:#e5e7eb;padding-left:16px">${stopsDone} Stops | ${pkgsDone} Pkgs ✅</span>
         <span style="font-size:9px;color:var(--fg3)">${ld}</span>
       </div>
     </div>`;
@@ -1210,18 +1507,25 @@ function buildCard(d) {
 
   // Route label
   let rl;
-  if (d.isSweeper) rl = '<span style="color:#fb923c;font-size:11px;font-weight:800">🧹 SWP</span>';
+  if (d.isSweeper) rl = '<span style="color:#fb923c;font-size:11px;font-weight:800">🧹 SWEEPER</span>';
   else if (d.isFlexRoute) rl = '<span style="color:#a855f7;font-size:11px;font-weight:800">📦 FLX</span>';
   else rl = `<span class="route">${d.route || '?'}</span>`;
 
   // Multi-route line
   let routesLine = '';
   if (d.isSweeper && Array.isArray(d.allRoutes) && d.allRoutes.length >= 2) {
-    routesLine = `<div style="font-size:8px;color:#fb923c;margin-top:1px;padding-left:16px">${[...new Set(d.allRoutes.filter(r => r && !r.includes(',')))].join(', ')}</div>`;
+    routesLine = `<div style="font-size:8px;color:#fb923c;margin-top:1px;padding-left:16px">Routes: ${[...new Set(d.allRoutes.filter(r => r && !r.includes(',')))].join(', ')}</div>`;
   }
   if (d.isHelper && !d.isSweeper && Array.isArray(d.allRoutes) && d.allRoutes.length >= 2) {
     routesLine = `<div style="font-size:8px;color:#60a5fa;margin-top:1px;padding-left:16px">🤝 ${[...new Set(d.allRoutes.filter(r => r && !r.includes(',')))].join(', ')}</div>`;
   }
+
+  // ── Desktop-matched stats block ──
+  const statsBlock = `<div class="dcard-stats-block">
+    <div class="s-row"><span class="s-label">Pace:</span><b>${d.pace || '—'}</b> <span class="s-label" style="margin-left:6px">Stops:</span><b>${stopsRem}</b> <span class="s-label" style="margin-left:6px">Pkgs:</span><b>${pkgsRem}</b></div>
+    <div class="s-row"><span class="s-label">Delivered:</span><b>${stopsDone}</b> <span class="s-label" style="margin-left:6px">Pkgs:</span><b>${pkgsDone}</b></div>
+    <div class="s-row"><span class="s-label">Total:</span><b>${stopsT}</b> <span class="s-label" style="margin-left:6px">Pkgs:</span><b>${pkgTotal}</b></div>
+  </div>`;
 
   return `<div class="dcard" style="${style}" onclick="openModal('${d.id}')">
     <div class="dcard-hdr">
@@ -1244,20 +1548,12 @@ function buildCard(d) {
       ${badges.map(b => `<span class="badge" style="background:${b[0]};color:${b[1]}">${b[2]}</span>`).join('')}
     </div>
     ${idleStr}
-    <div class="dcard-stats">
-      <span class="stat">Pace:<b>${d.pace || '—'}</b></span>
-      <span class="sep">|</span>
-      <span class="stat">Stops:<b>${sR}</b></span>
-      <span class="sep">|</span>
-      <span class="stat">Pkgs:<b>${dP}</b></span>
-      <span class="sep">|</span>
-      <span class="stat">Done:<b>${d.stopsCompleted || 0}/${d.stopsTotal || 0}</b></span>
-    </div>
+    ${statsBlock}
   </div>`;
 }
 
 // ═══════════════════════
-//  DRIVER MODAL (Full)
+//  DRIVER MODAL (Full Desktop Parity)
 // ═══════════════════════
 
 function openModal(tid) {
@@ -1273,23 +1569,39 @@ function openModal(tid) {
   const state = dispState(d);
   const pkgT = Math.max(d.totalPkgs || 0, d.remainingPkgs || 0);
   const pkgDone = Math.max(0, pkgT - dP);
+  const stopsDone = d.stopsCompleted || 0;
+  const stopsT = d.stopsTotal || 0;
 
-  // Phone numbers
+  // Contact info from driverInfoMap
+  const info = getBestDriverInfo(d.name) || {};
   const workPhone = d.phone || 'N/A';
+  const personalPhone = info.personalPhone || 'N/A';
+  const workEmail = info.email || 'N/A';
+  const flexPass = info.flexPass || 'N/A';
 
-  // GPS link
+  // GPS section
   let gpsHtml = '';
+  const gpsStatus = gpsStatusText(d);
   if (d.lat && d.lon && Number.isFinite(d.lat) && Number.isFinite(d.lon)) {
-    gpsHtml = `<a href="https://maps.apple.com/?ll=${d.lat},${d.lon}&q=${encodeURIComponent(name)}" target="_blank"
-      style="display:block;background:var(--bg2);padding:7px;border-radius:6px;text-align:center;color:var(--blue);font-weight:600;font-size:11px;text-decoration:none;margin-bottom:6px;border:1px solid var(--bg3)">
-      📍 Open in Maps (${d.lat.toFixed(4)}, ${d.lon.toFixed(4)})</a>`;
+    gpsHtml = `<div class="modal-section">
+      <div class="modal-section-title" style="color:var(--blue)">📍 GPS Location</div>
+      <div style="font-size:10px;color:var(--fg2);margin-bottom:4px">${gpsStatus} · ${d.lat.toFixed(4)}, ${d.lon.toFixed(4)}</div>
+      <a href="https://maps.apple.com/?ll=${d.lat},${d.lon}&q=${encodeURIComponent(name)}" target="_blank"
+        style="display:block;background:var(--bg);padding:7px;border-radius:6px;text-align:center;color:var(--blue);font-weight:600;font-size:11px;text-decoration:none;border:1px solid var(--bg3)">
+        📍 Open in Maps</a>
+    </div>`;
+  } else {
+    gpsHtml = `<div class="modal-section">
+      <div class="modal-section-title" style="color:var(--blue)">📍 GPS Location</div>
+      <div style="font-size:10px;color:var(--fg3)">No GPS data available</div>
+    </div>`;
   }
 
   // Break history
   let breakHtml = '';
   if (d.breaks && d.breaks.length > 0) {
-    breakHtml = `<div style="margin-top:8px"><div style="font-weight:700;font-size:10px;color:var(--fg2);margin-bottom:3px">☕ Breaks (${d.breaks.length})</div>`;
-    d.breaks.forEach((b, i) => {
+    breakHtml = `<div class="modal-section"><div class="modal-section-title" style="color:#93c5fd">☕ Breaks (${d.breaks.length})</div>`;
+    d.breaks.forEach((b) => {
       const dur = b.end ? Math.round((b.end - b.start) / 60000) : Math.round((Date.now() - b.start) / 60000);
       const endStr = b.end ? fmt(b.end) : 'In Progress';
       breakHtml += `<div style="font-size:10px;color:#93c5fd;padding:2px 0;border-bottom:1px solid var(--bg3)">${fmt(b.start)} → ${endStr} (${dur}m)</div>`;
@@ -1300,12 +1612,26 @@ function openModal(tid) {
   // Inactivity log
   let inactHtml = '';
   if (d.inactivityLog && d.inactivityLog.length > 0) {
-    inactHtml = `<div style="margin-top:8px"><div style="font-weight:700;font-size:10px;color:var(--fg2);margin-bottom:3px">⏸ Inactivity (${d.inactivityLog.length})</div>`;
+    inactHtml = `<div class="modal-section"><div class="modal-section-title" style="color:var(--amber)">⏸ Inactivity Log (${d.inactivityLog.length})</div>`;
     d.inactivityLog.forEach(l => {
       const locLink = (l.lat && l.lon) ? ` <a href="https://maps.apple.com/?ll=${l.lat},${l.lon}" target="_blank" style="color:var(--blue);font-size:9px">📍</a>` : '';
       inactHtml += `<div style="font-size:10px;color:#f59e0b;padding:2px 0;border-bottom:1px solid var(--bg3)">${fmt(l.start)} — ${l.duration}m${locLink}</div>`;
     });
     inactHtml += '</div>';
+  }
+
+  // Stops history (stopsList)
+  let stopsHistHtml = '';
+  if (d.stopsList && d.stopsList.length > 0) {
+    const recent = d.stopsList.slice(-15).reverse();
+    stopsHistHtml = `<div class="modal-section"><div class="modal-section-title" style="color:var(--green)">📦 Recent Stops (${d.stopsList.length} total)</div>`;
+    recent.forEach(s => {
+      stopsHistHtml += `<div style="font-size:9px;color:var(--fg2);padding:2px 0;border-bottom:1px solid var(--bg3);display:flex;justify-content:space-between">
+        <span>#${s.seq || '?'} ${s.address ? s.address.substring(0, 35) : '—'}</span>
+        <span style="color:var(--fg3)">${fmt(s.ts)}</span>
+      </div>`;
+    });
+    stopsHistHtml += '</div>';
   }
 
   // Routes
@@ -1317,16 +1643,54 @@ function openModal(tid) {
     </div>`;
   }
 
+  // Swept drivers (for sweepers)
+  let sweptHtml = '';
+  if (d.isSweeper && d.sweptDrivers && d.sweptDrivers.length > 0) {
+    sweptHtml = `<div class="modal-section"><div class="modal-section-title" style="color:var(--orange)">🧹 Swept Drivers (${d.sweptDrivers.length})</div>`;
+    d.sweptDrivers.forEach(sd => {
+      sweptHtml += `<div style="font-size:10px;color:#fb923c;padding:2px 0;border-bottom:1px solid var(--bg3)">${sd.name || sd.route || 'Unknown'} — ${sd.stops || '?'} stops</div>`;
+    });
+    sweptHtml += '</div>';
+  }
+  // Also check coveredDrivers (alternate field name)
+  if (d.isSweeper && !sweptHtml && d.coveredDrivers && Object.keys(d.coveredDrivers).length > 0) {
+    sweptHtml = `<div class="modal-section"><div class="modal-section-title" style="color:var(--orange)">🧹 Covered Drivers</div>`;
+    Object.entries(d.coveredDrivers).forEach(([tid2, info2]) => {
+      const dd = memory.drivers[tid2];
+      const nm = dd ? abbr(dd.name) : info2.name || tid2;
+      sweptHtml += `<div style="font-size:10px;color:#fb923c;padding:2px 0;border-bottom:1px solid var(--bg3)">${nm} (${info2.route || '?'})</div>`;
+    });
+    sweptHtml += '</div>';
+  }
+
+  // Pace delivery chart
+  let paceChartHtml = '';
+  if (d.paceData && d.paceData.length > 0) {
+    const maxVal = Math.max(...d.paceData.map(p => p.stops || 0), 1);
+    const bars = d.paceData.map(p => {
+      const h = Math.max(4, Math.round((p.stops / maxVal) * 40));
+      const color = (p.stops || 0) >= 10 ? '#10b981' : (p.stops || 0) >= 5 ? '#f59e0b' : '#ef4444';
+      return `<div class="pace-bar" style="height:${h}px;background:${color};width:22px"><span class="pace-val">${p.stops}</span></div>`;
+    }).join('');
+    paceChartHtml = `<div class="modal-section">
+      <div class="modal-section-title" style="color:var(--green)">📊 Delivery Pace (Stops/Hour)</div>
+      <div class="pace-chart-wrap">${bars}</div>
+      <div style="display:flex;justify-content:space-between;font-size:7px;color:var(--fg3);margin-top:2px;padding:0 2px">
+        ${d.paceData.map(p => `<span>${p.hour || ''}</span>`).join('')}
+      </div>
+    </div>`;
+  }
+
   // TBAs
   let tbaHtml = '';
   if (d.tbas && Object.keys(d.tbas).length > 0) {
     const entries = Object.entries(d.tbas).slice(0, 20);
-    tbaHtml = `<div style="margin-top:8px"><div style="font-weight:700;font-size:10px;color:var(--fg2);margin-bottom:3px">📦 Problem TBAs (${Object.keys(d.tbas).length})</div>`;
-    entries.forEach(([tba, info]) => {
-      const color = info.reason.includes('MISSING') ? '#d946ef' : '#ef4444';
+    tbaHtml = `<div class="modal-section"><div class="modal-section-title" style="color:var(--purple)">📦 Problem TBAs (${Object.keys(d.tbas).length})</div>`;
+    entries.forEach(([tba, info2]) => {
+      const color = info2.reason.includes('MISSING') ? '#d946ef' : '#ef4444';
       tbaHtml += `<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid var(--bg3);font-size:9px">
         <span style="color:#fff;font-family:monospace;user-select:all">${tba}</span>
-        <span style="color:${color};font-weight:700">${info.reason.replace(/_/g, ' ')}</span>
+        <span style="color:${color};font-weight:700">${info2.reason.replace(/_/g, ' ')}</span>
       </div>`;
     });
     tbaHtml += '</div>';
@@ -1335,7 +1699,7 @@ function openModal(tid) {
   // Returned TBAs
   let retTbaHtml = '';
   if (d.returnedTbas && d.returnedTbas.length > 0) {
-    retTbaHtml = `<div style="margin-top:8px"><div style="font-weight:700;font-size:10px;color:var(--fg2);margin-bottom:3px">↩️ Returned TBAs (${d.returnedTbas.length})</div>`;
+    retTbaHtml = `<div class="modal-section"><div class="modal-section-title" style="color:#a78bfa">↩️ Returned TBAs (${d.returnedTbas.length})</div>`;
     d.returnedTbas.slice(0, 20).forEach(tba => {
       retTbaHtml += `<div style="font-size:9px;color:#a78bfa;padding:2px 0;border-bottom:1px solid var(--bg3);font-family:monospace;user-select:all">${tba}</div>`;
     });
@@ -1344,18 +1708,27 @@ function openModal(tid) {
 
   document.getElementById('modalContent').innerHTML = `
     <!-- Header -->
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-      <div>
-        <div style="font-size:14px;font-weight:800;display:flex;align-items:center;gap:4px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:800;display:flex;align-items:center;gap:4px;flex-wrap:wrap">
           ${gpsDot(d)}
           <span style="color:${c}">${d.route || '?'}</span>
-          ${displayName}
-          ${d.inspectionDone ? '<span style="background:#22c55e;color:#fff;padding:1px 5px;border-radius:3px;font-size:8px;font-weight:700;margin-left:4px">INSP DONE</span>' : ''}
+          <span style="overflow:hidden;text-overflow:ellipsis">${displayName}</span>
+          ${d.inspectionDone ? '<span style="background:#22c55e;color:#fff;padding:1px 5px;border-radius:3px;font-size:8px;font-weight:700">INSP DONE</span>' : ''}
         </div>
-        <div style="font-size:10px;color:var(--fg2);margin-top:2px">
+        ${d.vehicleId ? `<div style="font-size:10px;color:#d1d5db;font-weight:600;margin-top:2px">🚐 ${d.vehicleId}</div>` : ''}
+        <div style="font-size:10px;color:var(--fg2);margin-top:3px">
           Work: <a href="tel:${workPhone}" style="color:var(--blue);text-decoration:none">${formatPhone(workPhone)}</a>
         </div>
-        ${d.vehicleId ? `<div style="font-size:10px;color:var(--fg3)">Vehicle: ${d.vehicleId}</div>` : ''}
+        <div style="font-size:10px;color:var(--fg2)">
+          Personal: <a href="tel:${personalPhone}" style="color:var(--violet);text-decoration:none">${formatPhone(personalPhone)}</a>
+        </div>
+        <div style="font-size:10px;color:var(--fg2)">
+          Email: <span style="color:#e5e7eb;user-select:all">${workEmail}</span>
+        </div>
+        <div style="font-size:10px;color:var(--fg2)">
+          Flex: <span style="color:#e5e7eb;user-select:all">${flexPass}</span>
+        </div>
       </div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
@@ -1367,32 +1740,49 @@ function openModal(tid) {
     </div>
 
     <!-- Progress bar -->
-    <div style="background:var(--bg2);padding:6px 8px;border-radius:6px;margin-bottom:6px">
-      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--fg2);margin-bottom:2px"><span>Progress</span><span style="color:#fff;font-weight:700">${Math.round(sp)}%</span></div>
-      <div style="background:var(--bg3);height:6px;border-radius:4px;overflow:hidden"><div style="width:${sp}%;height:100%;background:${c};border-radius:4px"></div></div>
+    <div style="margin-bottom:8px;background:var(--bg2);padding:6px 8px;border-radius:6px">
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--fg2);margin-bottom:3px">
+        <span>Progress</span>
+        <span style="color:#fff;font-weight:700">${sp.toFixed(0)}%</span>
+      </div>
+      <div style="background:var(--bg3);border-radius:3px;height:6px;overflow:hidden">
+        <div style="height:100%;width:${sp}%;background:${c};border-radius:3px;transition:width .4s"></div>
+      </div>
     </div>
 
-    <!-- Stats -->
+    <!-- ═══ Desktop-matched stats ═══ -->
     <div class="info-grid tri">
-      <div class="info-box" style="text-align:center"><span class="label">Remaining</span><div class="val">${sR}</div><span class="label">stops</span></div>
-      <div class="info-box" style="text-align:center"><span class="label">Delivered</span><div class="val" style="color:var(--green)">${d.stopsCompleted || 0}</div><span class="label">of ${d.stopsTotal || 0}</span></div>
-      <div class="info-box" style="text-align:center"><span class="label">Packages</span><div class="val">${dP}</div><span class="label">of ${pkgT}</span></div>
+      <div class="info-box"><span class="label">Remaining Stops</span><div class="val" style="font-size:14px;color:var(--amber)">${sR}</div></div>
+      <div class="info-box"><span class="label">Remaining Pkgs</span><div class="val" style="font-size:14px;color:var(--amber)">${dP}</div></div>
+      <div class="info-box"><span class="label">Delivered</span><div class="val" style="font-size:14px;color:var(--green)">${stopsDone}</div></div>
     </div>
-
-    <!-- Details -->
     <div class="info-grid">
+      <div class="info-box"><span class="label">Total Stops</span><div class="val">${stopsT}</div></div>
+      <div class="info-box"><span class="label">Total Pkgs</span><div class="val">${pkgT}</div></div>
+      <div class="info-box"><span class="label">Pkgs Delivered</span><div class="val" style="color:var(--green)">${pkgDone}</div></div>
+      <div class="info-box"><span class="label">Returns / Missing</span><div class="val" style="font-size:11px">${d.returns || 0} / ${d.missing || 0}</div></div>
       <div class="info-box"><span class="label">Last Delivery</span><div class="val" style="font-size:11px">${fmt(d.lastDeliveryTime)}</div></div>
       <div class="info-box"><span class="label">First Delivery</span><div class="val" style="font-size:11px">${fmt(d.firstDeliveryTime)}</div></div>
-      <div class="info-box"><span class="label">Returns / Missing</span><div class="val" style="font-size:11px">${d.returns || 0} / ${d.missing || 0}</div></div>
       <div class="info-box"><span class="label">Extra Phones</span><div class="val" style="font-size:11px;color:var(--orange)">${d.extraPhoneCount || 0}</div></div>
       ${routesHtml}
+    </div>
+
+    <!-- ═══ Notify Me When ═══ -->
+    <div class="modal-section">
+      <div class="modal-section-title" style="color:var(--amber)">🔔 Notify Me When</div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#fff;cursor:pointer;margin-bottom:4px">
+        <input type="checkbox" ${d.notify5 ? 'checked' : ''} onchange="sendCommand('notify5','${tid}',this.checked)" style="accent-color:var(--amber)"> 5 stops left
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#fff;cursor:pointer">
+        <input type="checkbox" ${d.notifyDone ? 'checked' : ''} onchange="sendCommand('notifyDone','${tid}',this.checked)" style="accent-color:var(--amber)"> Driver is done
+      </label>
     </div>
 
     ${gpsHtml}
 
     <!-- ═══ MANUAL ACTIONS ═══ -->
-    <div style="background:var(--bg2);border:1px solid var(--bg3);border-radius:7px;padding:8px;margin-bottom:6px">
-      <div style="font-size:10px;font-weight:700;color:var(--red);margin-bottom:6px">🔧 Actions</div>
+    <div class="modal-section">
+      <div class="modal-section-title" style="color:var(--red)">🔧 Actions</div>
       <div class="action-grid">
         <button class="act-btn ${d.isPinned ? 'on' : ''}" onclick="sendCommand('pin','${tid}',${!d.isPinned});closeModal()">📌 ${d.isPinned ? 'Pinned' : 'Pin'}</button>
         <button class="act-btn ${d.isSweeper ? 'on' : ''}" onclick="sendCommand('sweeper','${tid}',${!d.isSweeper});closeModal()">🧹 Sweep</button>
@@ -1411,13 +1801,16 @@ function openModal(tid) {
       </div>
     </div>
 
+    ${paceChartHtml}
+    ${sweptHtml}
     ${breakHtml}
     ${inactHtml}
+    ${stopsHistHtml}
     ${tbaHtml}
     ${retTbaHtml}
 
     <div style="margin-top:10px;padding-top:6px;border-top:1px solid var(--bg3);font-size:8px;color:var(--fg3)">
-      TID: ${tid} · Station: ${memory.station || currentStation} · Dispatch Radar by Andrismar T.
+      TID: ${tid} · Station: ${memory.station || currentStation} · Mobile Amazon Radar by Andrismar T.
     </div>
   `;
 
@@ -1451,7 +1844,6 @@ function openMap() {
 
   if (!drivers.length) return;
 
-  // Station marker
   const stationCoords = { DJE5: [40.5245, -74.2574], DJZ6: [40.6667, -73.9958], DYY6: [40.6844, -73.9762], DNJ4: [40.7282, -74.0776] };
   const sc2 = stationCoords[currentStation];
   if (sc2) {
@@ -1465,7 +1857,7 @@ function openMap() {
     const color = d.inspectionDone ? '#22c55e' : d.state === 'INACTIVE' ? '#f59e0b' : d.state === 'ON BREAK' ? '#3b82f6' :
       d.state === 'FINISHED' ? '#10b981' : d.isSweeper ? '#fb923c' : d.isHelper ? '#60a5fa' : d.isFlexRoute ? '#a855f7' : '#10b981';
     const m = L.circleMarker([d.lat, d.lon], { radius: 7, color, fillColor: color, fillOpacity: .85, weight: 1.5 })
-      .bindPopup(`<div style="font-size:11px"><b>${d.route || '?'}</b> ${abbr(d.name)}<br>${dispState(d)}<br>Stops: ${d.stopsCompleted || 0}/${d.stopsTotal || 0}<br>Pace: ${d.pace || '—'}</div>`);
+      .bindPopup(`<div style="font-size:11px"><b>${d.route || '?'}</b> ${abbr(d.name)}<br>${d.vehicleId || ''}<br>${dispState(d)}<br>Stops: ${d.stopsCompleted || 0}/${d.stopsTotal || 0}<br>Pace: ${d.pace || '—'}</div>`);
     leafletMap.addLayer(m);
     mapMarkers.push(m);
   });
@@ -1480,48 +1872,171 @@ function closeMap() {
 }
 
 // ═══════════════════════
-//  DEBRIEF (cloud sync)
+//  DEBRIEF (Morning + Nightly toggle)
 // ═══════════════════════
 
 async function openDebrief() {
   document.getElementById('debriefOverlay').classList.add('open');
-  document.getElementById('debriefText').value = 'Loading from cloud...';
-  document.getElementById('debriefParsed').innerHTML = '';
-
-  try {
-    const resp = await fetch(cloudUrl + '?action=debrief&station=' + currentStation);
-    const data = await resp.json();
-    if (data && data.raw) {
-      document.getElementById('debriefText').value = data.raw;
-      parseAndShowDebrief(data.raw);
-    } else {
-      document.getElementById('debriefText').value = '';
-      document.getElementById('debriefText').placeholder = 'No debrief saved yet. Paste it here...';
-    }
-  } catch (e) {
-    document.getElementById('debriefText').value = '';
-    document.getElementById('debriefText').placeholder = 'Could not load debrief. Paste it here...';
-  }
+  debriefMode = 'morning';
+  renderDebriefBody();
 }
 
 function closeDebrief() {
   document.getElementById('debriefOverlay').classList.remove('open');
 }
 
+function switchDebriefMode(mode) {
+  debriefMode = mode;
+  renderDebriefBody();
+}
+
+async function renderDebriefBody() {
+  const body = document.getElementById('debriefBody');
+  const title = document.getElementById('debriefTitle');
+  const saveBtn = document.getElementById('debriefSaveBtn');
+
+  if (debriefMode === 'morning') {
+    title.innerHTML = '☀️ Morning Debrief';
+    saveBtn.style.display = '';
+    body.innerHTML = `
+      <div class="debrief-tabs">
+        <button class="debrief-tab active" onclick="switchDebriefMode('morning')">☀️ Morning</button>
+        <button class="debrief-tab" onclick="switchDebriefMode('nightly')">🌙 Nightly</button>
+      </div>
+      <p style="font-size:11px;color:var(--fg2);margin-bottom:8px">Paste or edit the morning debrief. Syncs with desktop.</p>
+      <textarea class="debrief-textarea" id="debriefText" placeholder="Paste morning debrief here..."></textarea>
+      <div id="debriefParsed" style="margin-top:10px"></div>
+      <p style="font-size:8px;color:var(--fg3);text-align:center;margin-top:12px;font-style:italic">Mobile Amazon Radar — By: Andrismar T.</p>
+    `;
+
+    // Load existing debrief from cloud
+    try {
+      const resp = await fetch(cloudUrl + '?action=debrief&station=' + currentStation);
+      const data = await resp.json();
+      const ta = document.getElementById('debriefText');
+      if (data && data.raw) {
+        ta.value = data.raw;
+        parseAndShowDebrief(data.raw);
+      } else {
+        ta.value = '';
+      }
+    } catch (e) {
+      const ta = document.getElementById('debriefText');
+      if (ta) ta.placeholder = 'Could not load debrief. Paste it here...';
+    }
+  } else {
+    title.innerHTML = '🌙 Nightly Debrief';
+    saveBtn.style.display = 'none';
+    body.innerHTML = `
+      <div class="debrief-tabs">
+        <button class="debrief-tab" onclick="switchDebriefMode('morning')">☀️ Morning</button>
+        <button class="debrief-tab active" onclick="switchDebriefMode('nightly')">🌙 Nightly</button>
+      </div>
+      <div style="text-align:center;padding:20px"><div class="spinner"></div><p style="margin-top:8px;color:var(--fg3)">Loading nightly report...</p></div>
+    `;
+
+    // Load nightly report from cloud
+    try {
+      const resp = await fetch(cloudUrl + '?action=report&station=global');
+      const data = await resp.json();
+      nightlyReportData = data;
+      renderNightlyReport(data);
+    } catch(e) {
+      body.innerHTML = `
+        <div class="debrief-tabs">
+          <button class="debrief-tab" onclick="switchDebriefMode('morning')">☀️ Morning</button>
+          <button class="debrief-tab active" onclick="switchDebriefMode('nightly')">🌙 Nightly</button>
+        </div>
+        <div class="empty"><p>Could not load nightly report.</p></div>
+      `;
+    }
+  }
+}
+
+function renderNightlyReport(rpt) {
+  const body = document.getElementById('debriefBody');
+  if (!rpt || !rpt.lastDate) {
+    body.innerHTML = `
+      <div class="debrief-tabs">
+        <button class="debrief-tab" onclick="switchDebriefMode('morning')">☀️ Morning</button>
+        <button class="debrief-tab active" onclick="switchDebriefMode('nightly')">🌙 Nightly</button>
+      </div>
+      <div class="empty"><p>No nightly report available. Generate one from the desktop version first.</p></div>
+    `;
+    return;
+  }
+
+  // Build a read-only view of the nightly report
+  let html = `
+    <div class="debrief-tabs">
+      <button class="debrief-tab" onclick="switchDebriefMode('morning')">☀️ Morning</button>
+      <button class="debrief-tab active" onclick="switchDebriefMode('nightly')">🌙 Nightly</button>
+    </div>
+    <div style="text-align:center;margin-bottom:10px">
+      <div style="font-size:16px;font-weight:800;color:var(--indigo)">🌙 Nightly Report</div>
+      <div style="font-size:11px;color:var(--fg3)">${rpt.lastDate || ''} · ${rpt.station || currentStation}</div>
+    </div>
+  `;
+
+  // Closing team
+  if (rpt.closingDispatcher1 || rpt.closingDispatcher2) {
+    html += `<div class="modal-section">
+      <div class="modal-section-title" style="color:var(--indigo)">👥 Closing Team</div>
+      <div style="font-size:11px;color:var(--fg)">${rpt.closingDispatcher1 || 'N/A'} · ${rpt.closingDispatcher2 || 'N/A'}</div>
+    </div>`;
+  }
+
+  // Phones
+  if (rpt.phonesUsed !== undefined) {
+    html += `<div class="modal-section">
+      <div class="modal-section-title" style="color:var(--blue)">📱 Phones</div>
+      <div style="font-size:10px;color:var(--fg2)">Used: ${rpt.phonesUsed || 0} · Back: ${rpt.phonesBack || 0} · Total: ${rpt.phonesTotal || 0} · In Repair: ${rpt.phonesRepair || 0}</div>
+    </div>`;
+  }
+
+  // Gas cards
+  if (rpt.gasUsed !== undefined) {
+    html += `<div class="modal-section">
+      <div class="modal-section-title" style="color:var(--amber)">⛽ Gas Cards</div>
+      <div style="font-size:10px;color:var(--fg2)">Used: ${rpt.gasUsed || 0} · Back: ${rpt.gasBack || 0} · Total: ${rpt.gasTotal || 0}</div>
+    </div>`;
+  }
+
+  // Additional comments
+  if (rpt.comments && rpt.comments.some(c => c && c.trim())) {
+    html += `<div class="modal-section">
+      <div class="modal-section-title" style="color:var(--fg)">💬 Comments</div>`;
+    rpt.comments.filter(c => c && c.trim()).forEach(c => {
+      html += `<div style="font-size:10px;color:var(--fg2);padding:2px 0;border-bottom:1px solid var(--bg3)">${c}</div>`;
+    });
+    html += '</div>';
+  }
+
+  // Permanent comments
+  if (rpt.permComments && rpt.permComments.some(c => c && c.trim())) {
+    html += `<div class="modal-section">
+      <div class="modal-section-title" style="color:var(--violet)">📌 Permanent Comments</div>`;
+    rpt.permComments.filter(c => c && c.trim()).forEach(c => {
+      html += `<div style="font-size:10px;color:var(--fg2);padding:2px 0;border-bottom:1px solid var(--bg3)">${c}</div>`;
+    });
+    html += '</div>';
+  }
+
+  html += `<p style="font-size:8px;color:var(--fg3);text-align:center;margin-top:12px;font-style:italic">Mobile Amazon Radar — By: Andrismar T.</p>`;
+  body.innerHTML = html;
+}
+
 async function saveDebriefToCloud() {
-  const text = document.getElementById('debriefText').value.trim();
+  const ta = document.getElementById('debriefText');
+  if (!ta) return;
+  const text = ta.value.trim();
   if (!text) { showToast('Debrief is empty'); return; }
 
   const btn = document.getElementById('debriefSaveBtn');
   btn.textContent = '⏳ Saving...';
 
   const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const payload = {
-    raw: text,
-    date: nowET.toDateString(),
-    station: currentStation,
-    source: 'mobile'
-  };
+  const payload = { raw: text, date: nowET.toDateString(), station: currentStation, source: 'mobile' };
 
   try {
     await fetch(cloudUrl + '?action=debrief&station=' + currentStation, {
@@ -1541,6 +2056,8 @@ async function saveDebriefToCloud() {
 }
 
 function parseAndShowDebrief(text) {
+  const el = document.getElementById('debriefParsed');
+  if (!el) return;
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   let section = '';
   let attendance = [], sweepers = [], extraPhones = [], alerts = [];
@@ -1561,38 +2078,92 @@ function parseAndShowDebrief(text) {
   });
 
   let html = '';
-  if (attendance.length) html += `<div style="font-size:10px;font-weight:700;color:var(--green);margin-bottom:2px">Attendance (${attendance.length})</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${attendance.join(', ')}</div>`;
-  if (sweepers.length) html += `<div style="font-size:10px;font-weight:700;color:var(--orange);margin-bottom:2px">Sweepers</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${sweepers.join(', ')}</div>`;
-  if (extraPhones.length) html += `<div style="font-size:10px;font-weight:700;color:#f97316;margin-bottom:2px">Extra Phones (${extraPhones.length})</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${extraPhones.join(', ')}</div>`;
-  if (alerts.length) html += `<div style="font-size:10px;font-weight:700;color:var(--red);margin-bottom:2px">Alerts</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${alerts.join(', ')}</div>`;
+  if (attendance.length) html += `<div style="font-size:10px;font-weight:700;color:var(--green);margin-bottom:2px">✅ Attendance (${attendance.length})</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${attendance.join(', ')}</div>`;
+  if (sweepers.length) html += `<div style="font-size:10px;font-weight:700;color:var(--orange);margin-bottom:2px">🧹 Sweepers</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${sweepers.join('<br>')}</div>`;
+  if (extraPhones.length) html += `<div style="font-size:10px;font-weight:700;color:#f97316;margin-bottom:2px">📱 Extra Phones (${extraPhones.length})</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${extraPhones.join(', ')}</div>`;
+  if (alerts.length) html += `<div style="font-size:10px;font-weight:700;color:var(--red);margin-bottom:2px">🚨 Alerts</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${alerts.join(', ')}</div>`;
 
-  document.getElementById('debriefParsed').innerHTML = html;
+  el.innerHTML = html;
 }
 
 // ═══════════════════════
-//  STAPLES REPORT (cloud sync + copy)
+//  REPORTS (quick view)
+// ═══════════════════════
+
+function openReports() {
+  // Quick fleet summary
+  const raw = getRaw();
+  const act = raw.filter(d => d.state !== 'FINISHED');
+  const done = raw.filter(d => d.state === 'FINISHED' && isActive(d));
+  const onBreak = act.filter(d => d.state === 'ON BREAK');
+  const behind = act.filter(d => d.progressStatus === 'BEHIND' || d.progressStatus === 'AT_RISK');
+  const noBreak = raw.filter(d => d.hasNoBreaks);
+
+  let totalStops = 0, totalDone = 0, totalPkgs = 0, totalDeliv = 0;
+  raw.forEach(d => {
+    totalStops += d.stopsTotal || 0;
+    totalDone += d.stopsCompleted || 0;
+    totalPkgs += Math.max(d.totalPkgs || 0, d.remainingPkgs || 0);
+    totalDeliv += Math.max(0, (d.totalPkgs || 0) - (d.remainingPkgs || 0));
+  });
+
+  const html = `
+    <div style="text-align:center;margin-bottom:12px">
+      <div style="font-size:16px;font-weight:800;color:var(--green)">📊 Fleet Summary</div>
+      <div style="font-size:10px;color:var(--fg3)">${currentStation} · ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })}</div>
+    </div>
+    <div class="info-grid">
+      <div class="info-box" style="text-align:center"><span class="label">Active</span><div class="val" style="color:var(--green)">${act.length}</div></div>
+      <div class="info-box" style="text-align:center"><span class="label">Completed</span><div class="val" style="color:var(--blue)">${done.length}</div></div>
+      <div class="info-box" style="text-align:center"><span class="label">On Break</span><div class="val" style="color:#93c5fd">${onBreak.length}</div></div>
+      <div class="info-box" style="text-align:center"><span class="label">Behind</span><div class="val" style="color:var(--red)">${behind.length}</div></div>
+      <div class="info-box" style="text-align:center"><span class="label">No Break</span><div class="val" style="color:var(--amber)">${noBreak.length}</div></div>
+      <div class="info-box" style="text-align:center"><span class="label">Total</span><div class="val">${raw.length}</div></div>
+    </div>
+    <div class="info-grid">
+      <div class="info-box"><span class="label">Total Stops</span><div class="val">${totalStops.toLocaleString()}</div></div>
+      <div class="info-box"><span class="label">Completed Stops</span><div class="val" style="color:var(--green)">${totalDone.toLocaleString()}</div></div>
+      <div class="info-box"><span class="label">Total Pkgs</span><div class="val">${totalPkgs.toLocaleString()}</div></div>
+      <div class="info-box"><span class="label">Delivered Pkgs</span><div class="val" style="color:var(--green)">${totalDeliv.toLocaleString()}</div></div>
+    </div>
+    <button class="hdr-btn" style="width:100%;padding:10px;margin-top:10px" onclick="copyFleetSummary()">📋 Copy Summary</button>
+  `;
+
+  document.getElementById('modalContent').innerHTML = html;
+  document.getElementById('driverModal').classList.add('open');
+}
+
+function copyFleetSummary() {
+  const raw = getRaw();
+  const act = raw.filter(d => d.state !== 'FINISHED');
+  const done = raw.filter(d => d.state === 'FINISHED' && isActive(d));
+  let text = `Fleet Summary — ${currentStation}\n`;
+  text += `Active: ${act.length} | Done: ${done.length} | Total: ${raw.length}\n`;
+  text += `Behind: ${raw.filter(d => d.progressStatus === 'BEHIND' || d.progressStatus === 'AT_RISK').length}\n`;
+  navigator.clipboard.writeText(text).then(() => showToast('Copied!')).catch(() => showToast('Copy failed', true));
+}
+
+function openExport() {
+  showToast('Export: Use desktop version for full export');
+}
+
+// ═══════════════════════
+//  STAPLES REPORT
 // ═══════════════════════
 
 let staplesData = { itinerary: '', scanned: '', totalReturns: '', manager: '' };
 
 async function openStaples() {
   document.getElementById('staplesOverlay').classList.add('open');
-
-  // Try to load from cloud
   try {
     const resp = await fetch(cloudUrl + '?action=staples&station=' + currentStation);
     const data = await resp.json();
-    if (data && data.itinerary !== undefined) {
-      staplesData = data;
-    }
+    if (data && data.itinerary !== undefined) staplesData = data;
   } catch (e) {}
-
   renderStaples();
 }
 
-function closeStaples() {
-  document.getElementById('staplesOverlay').classList.remove('open');
-}
+function closeStaples() { document.getElementById('staplesOverlay').classList.remove('open'); }
 
 function renderStaples() {
   const sd = staplesData;
@@ -1603,39 +2174,24 @@ function renderStaples() {
   document.getElementById('staplesBody').innerHTML = `
     <div style="text-align:center;margin-bottom:12px">
       <div style="font-size:16px;font-weight:800;color:#86efac">📎 STAPLES ${dateStr}</div>
-      <div style="font-size:8px;color:#4b5563;font-style:italic">By: Andrismar T.</div>
     </div>
-
     <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
-      <div>
-        <div style="font-size:11px;font-weight:700;color:#86efac;margin-bottom:2px">EXPECTED (Picked-Expected)</div>
-        <input class="staples-input" id="stpl_itin" value="${sd.itinerary || ''}" placeholder="24-24" oninput="onStaplesInput()">
-      </div>
-      <div>
-        <div style="font-size:11px;font-weight:700;color:#86efac;margin-bottom:2px">SCANNED</div>
-        <input class="staples-input" id="stpl_scan" value="${sd.scanned || ''}" placeholder="31" oninput="onStaplesInput()">
-      </div>
-      <div>
-        <div style="font-size:11px;font-weight:700;color:#86efac;margin-bottom:2px">TOTAL RETURNS</div>
-        <input class="staples-input" id="stpl_total" value="${sd.totalReturns || ''}" placeholder="33" oninput="onStaplesInput()">
-      </div>
-      <div>
-        <div style="font-size:11px;font-weight:700;color:#86efac;margin-bottom:2px">MANAGER ON DUTY</div>
-        <input class="staples-input" id="stpl_mgr" value="${sd.manager || ''}" placeholder="Manager name" oninput="onStaplesInput()">
-      </div>
+      <div><div style="font-size:11px;font-weight:700;color:#86efac;margin-bottom:2px">EXPECTED (Picked-Expected)</div>
+      <input class="staples-input" id="stpl_itin" value="${sd.itinerary || ''}" placeholder="24-24" oninput="onStaplesInput()"></div>
+      <div><div style="font-size:11px;font-weight:700;color:#86efac;margin-bottom:2px">SCANNED</div>
+      <input class="staples-input" id="stpl_scan" value="${sd.scanned || ''}" placeholder="31" oninput="onStaplesInput()"></div>
+      <div><div style="font-size:11px;font-weight:700;color:#86efac;margin-bottom:2px">TOTAL RETURNS</div>
+      <input class="staples-input" id="stpl_total" value="${sd.totalReturns || ''}" placeholder="33" oninput="onStaplesInput()"></div>
+      <div><div style="font-size:11px;font-weight:700;color:#86efac;margin-bottom:2px">MANAGER ON DUTY</div>
+      <input class="staples-input" id="stpl_mgr" value="${sd.manager || ''}" placeholder="Manager name" oninput="onStaplesInput()"></div>
     </div>
-
     <div id="staplesPreview" style="background:#050b14;border:1px solid var(--bg3);border-radius:7px;padding:10px;margin-bottom:10px"></div>
-
     <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap">
-      <button class="hdr-btn" onclick="copyStaples()" style="padding:8px 16px;font-size:12px">📋 Copy Report</button>
+      <button class="hdr-btn" onclick="copyStaples()" style="padding:8px 16px;font-size:12px">📋 Copy</button>
       <button class="hdr-btn" onclick="shareStaples()" style="padding:8px 16px;font-size:12px">📤 Share</button>
-      <button class="hdr-btn" onclick="saveStaplesToCloud()" style="padding:8px 16px;font-size:12px">💾 Save to Cloud</button>
+      <button class="hdr-btn" onclick="saveStaplesToCloud()" style="padding:8px 16px;font-size:12px">💾 Save</button>
     </div>
-
-    <p style="font-size:8px;color:var(--fg3);text-align:center;margin-top:12px;font-style:italic">Dispatch Radar — By: Andrismar T.</p>
   `;
-
   updateStaplesPreview();
 }
 
@@ -1650,89 +2206,89 @@ function onStaplesInput() {
 function calcStaplesReport(sd) {
   const itinStr = (sd.itinerary || '').replace(/[–—]/g, '-').trim();
   let pickedUp = 0, expected = 0;
-  if (itinStr.includes('-')) {
-    const parts = itinStr.split('-').map(s => parseInt(s, 10));
-    pickedUp = isNaN(parts[0]) ? 0 : parts[0];
-    expected = isNaN(parts[1]) ? 0 : parts[1];
-  } else {
-    pickedUp = parseInt(itinStr, 10) || 0;
-    expected = pickedUp;
-  }
+  if (itinStr.includes('-')) { const p = itinStr.split('-').map(s => parseInt(s, 10)); pickedUp = isNaN(p[0]) ? 0 : p[0]; expected = isNaN(p[1]) ? 0 : p[1]; }
+  else { pickedUp = parseInt(itinStr, 10) || 0; expected = pickedUp; }
   const scannedStr = (sd.scanned || '').replace(/[–—]/g, '-').trim();
   let scanned = scannedStr.includes('-') ? parseInt(scannedStr.split('-')[0], 10) || 0 : parseInt(scannedStr, 10) || 0;
   const totalReturns = parseInt(sd.totalReturns, 10) || 0;
-  const nonItinerary = Math.max(0, totalReturns - pickedUp);
-  const notScanned = Math.max(0, totalReturns - scanned);
-  return { pickedUp, expected, scanned, totalReturns, nonItinerary, notScanned, manager: (sd.manager || '').trim() || 'N/A' };
+  return { pickedUp, expected, scanned, totalReturns, nonItinerary: Math.max(0, totalReturns - pickedUp), notScanned: Math.max(0, totalReturns - scanned), manager: (sd.manager || '').trim() || 'N/A' };
 }
 
 function buildStaplesText(c) {
   const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
   if (et.getHours() < 2) et.setDate(et.getDate() - 1);
-  const mm = String(et.getMonth() + 1).padStart(2, '0');
-  const dd = String(et.getDate()).padStart(2, '0');
-  const yyyy = et.getFullYear();
-  return `STAPLES ${mm}/${dd}/${yyyy}\n` +
-    `• Itinerary Pick-up: ${c.pickedUp} out of ${c.expected}\n` +
-    `• Non-itinerary Pick-up: ${c.nonItinerary} Boxes\n` +
-    `• Total scanned: ${c.scanned} Boxes\n` +
-    `• Not Scanned: ${c.notScanned} Box${c.notScanned === 1 ? '' : 'es'}\n` +
-    `• Total Returns: ${c.totalReturns} Boxes\n` +
-    `• Manager On Duty: ${c.manager}`;
+  return `STAPLES ${String(et.getMonth() + 1).padStart(2, '0')}/${String(et.getDate()).padStart(2, '0')}/${et.getFullYear()}\n` +
+    `• Itinerary Pick-up: ${c.pickedUp} out of ${c.expected}\n• Non-itinerary Pick-up: ${c.nonItinerary} Boxes\n• Total scanned: ${c.scanned} Boxes\n• Not Scanned: ${c.notScanned} Box${c.notScanned === 1 ? '' : 'es'}\n• Total Returns: ${c.totalReturns} Boxes\n• Manager On Duty: ${c.manager}`;
 }
 
 function updateStaplesPreview() {
-  const c = calcStaplesReport(staplesData);
   const el = document.getElementById('staplesPreview');
   if (!el) return;
-  el.innerHTML = `
-    <div style="font-size:9px;font-weight:700;color:#3a6a50;text-transform:uppercase;margin-bottom:6px">PREVIEW</div>
-    <div style="font-size:11px;color:#a8bfd4;white-space:pre-wrap;line-height:1.6">${buildStaplesText(c)}</div>
-  `;
+  el.innerHTML = `<div style="font-size:9px;font-weight:700;color:#3a6a50;text-transform:uppercase;margin-bottom:6px">PREVIEW</div><div style="font-size:11px;color:#a8bfd4;white-space:pre-wrap;line-height:1.6">${buildStaplesText(calcStaplesReport(staplesData))}</div>`;
 }
 
 function copyStaples() {
-  const c = calcStaplesReport(staplesData);
-  const text = buildStaplesText(c);
-  navigator.clipboard.writeText(text).then(() => {
-    showToast('📋 Copied to clipboard!');
-  }).catch(() => {
-    // Fallback for iOS
-    const ta = document.createElement('textarea');
-    ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
-    document.body.appendChild(ta); ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
-    showToast('📋 Copied!');
-  });
+  const text = buildStaplesText(calcStaplesReport(staplesData));
+  navigator.clipboard.writeText(text).then(() => showToast('📋 Copied!')).catch(() => { const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); showToast('📋 Copied!'); });
 }
 
 async function shareStaples() {
-  const c = calcStaplesReport(staplesData);
-  const text = buildStaplesText(c);
-  if (navigator.share) {
-    try {
-      await navigator.share({ title: 'Staples Report', text });
-      showToast('Shared!');
-    } catch (e) {
-      copyStaples();
-    }
-  } else {
-    copyStaples();
-  }
+  const text = buildStaplesText(calcStaplesReport(staplesData));
+  if (navigator.share) { try { await navigator.share({ title: 'Staples Report', text }); showToast('Shared!'); } catch(e) { copyStaples(); } } else { copyStaples(); }
 }
 
 async function saveStaplesToCloud() {
   try {
-    await fetch(cloudUrl + '?action=staples&station=' + currentStation, {
-      method: 'POST', mode: 'cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(staplesData)
-    });
-    showToast('💾 Staples saved to cloud');
-  } catch (e) {
-    showToast('Save failed', true);
-  }
+    await fetch(cloudUrl + '?action=staples&station=' + currentStation, { method: 'POST', mode: 'cors', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(staplesData) });
+    showToast('💾 Saved');
+  } catch(e) { showToast('Save failed', true); }
+}
+
+// ═══════════════════════
+//  SETTINGS
+// ═══════════════════════
+
+function openSettings() {
+  document.getElementById('settingsOverlay').classList.add('open');
+  const pin = localStorage.getItem(LS_PIN) || '';
+  document.getElementById('settingsBody').innerHTML = `
+    <div style="margin-bottom:16px">
+      <div style="font-size:14px;font-weight:700;color:var(--green);margin-bottom:8px">🔒 Security PIN</div>
+      <input class="setup-input" type="password" id="settingsPin" value="${pin}" maxlength="6" inputmode="numeric" placeholder="Enter new PIN" style="margin-bottom:8px">
+      <button class="hdr-btn" style="width:100%;padding:10px" onclick="updatePin()">Update PIN</button>
+    </div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:14px;font-weight:700;color:var(--blue);margin-bottom:8px">☁️ Cloud URL</div>
+      <input class="setup-input" type="text" id="settingsUrl" value="${cloudUrl}" placeholder="Cloud URL" style="margin-bottom:8px">
+      <button class="hdr-btn" style="width:100%;padding:10px" onclick="updateUrl()">Update URL</button>
+    </div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:14px;font-weight:700;color:var(--red);margin-bottom:8px">⚠ Danger Zone</div>
+      <button class="hdr-btn" style="width:100%;padding:10px;color:var(--red);border-color:var(--red)" onclick="if(confirm('Clear all local data and reset?')){localStorage.clear();sessionStorage.clear();location.reload()}">Reset Everything</button>
+    </div>
+    <div style="text-align:center;color:var(--fg3);font-size:10px;margin-top:20px">
+      <div>Mobile Amazon Radar V4.0</div>
+      <div style="font-style:italic">By: Andrismar T.</div>
+    </div>
+  `;
+}
+
+function closeSettings() { document.getElementById('settingsOverlay').classList.remove('open'); }
+
+function updatePin() {
+  const pin = document.getElementById('settingsPin').value.trim();
+  if (!pin || pin.length < 4) { showToast('PIN must be 4-6 digits', true); return; }
+  localStorage.setItem(LS_PIN, pin);
+  showToast('PIN updated');
+}
+
+function updateUrl() {
+  const url = document.getElementById('settingsUrl').value.trim();
+  if (!url || !url.startsWith('http')) { showToast('Invalid URL', true); return; }
+  cloudUrl = url;
+  localStorage.setItem(LS_URL, url);
+  showToast('URL updated');
+  fetchData();
 }
 
 // ═══════════════════════
@@ -1741,10 +2297,12 @@ async function saveStaplesToCloud() {
 
 let touchY = 0;
 const lw = document.getElementById('listWrap');
-lw.addEventListener('touchstart', e => { touchY = e.touches[0].clientY; }, { passive: true });
-lw.addEventListener('touchend', e => {
-  if (lw.scrollTop === 0 && e.changedTouches[0].clientY - touchY > 80) fetchData();
-});
+if (lw) {
+  lw.addEventListener('touchstart', e => { touchY = e.touches[0].clientY; }, { passive: true });
+  lw.addEventListener('touchend', e => {
+    if (lw.scrollTop === 0 && e.changedTouches[0].clientY - touchY > 80) fetchData();
+  });
+}
 
 // ═══════════════════════
 //  SYNC LABEL UPDATER
@@ -1754,10 +2312,12 @@ setInterval(() => {
   if (lastFetch > 0) {
     const ago = Math.round((Date.now() - lastFetch) / 1000);
     const label = document.getElementById('syncLabel');
+    if (!label) return;
     if (ago < 5) label.textContent = '● Synced just now';
     else if (ago < 60) label.textContent = `● Synced ${ago}s ago`;
     else label.textContent = `● Synced ${Math.floor(ago / 60)}m ago`;
-    document.getElementById('syncDot').classList.toggle('live', ago < REFRESH_MS / 1000);
+    const dot = document.getElementById('syncDot');
+    if (dot) dot.classList.toggle('live', ago < REFRESH_MS / 1000);
   }
 }, 1000);
 
@@ -1765,7 +2325,7 @@ setInterval(() => {
 //  INIT
 // ═══════════════════════
 
-boot();
+initApp();
 </script>
 </body>
 </html>
