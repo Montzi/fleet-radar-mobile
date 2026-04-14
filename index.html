@@ -5,17 +5,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Mobile Amazon Radar">
+<meta name="apple-mobile-web-app-title" content="Dispatch Radar">
 <meta name="theme-color" content="#111827">
 <meta name="mobile-web-app-capable" content="yes">
-<title>Mobile Amazon Radar</title>
+<title>Dispatch Radar</title>
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%23111827'/%3E%3Ccircle cx='90' cy='85' r='50' fill='none' stroke='%2310b981' stroke-width='5'/%3E%3Ccircle cx='90' cy='85' r='6' fill='%2310b981'/%3E%3Cline x1='90' y1='85' x2='90' y2='50' stroke='%2310b981' stroke-width='4' stroke-linecap='round'/%3E%3Ctext x='90' y='155' text-anchor='middle' fill='%2310b981' font-size='18' font-weight='bold' font-family='system-ui'%3ERADAR%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 /* ═══════════════════════════════════════════════
-   MOBILE AMAZON RADAR — V4.0
+   DISPATCH RADAR MOBILE — V5.0
    By: Andrismar T.
    Desktop-parity mobile companion
+   V5.0 Fixes:
+   - Renamed to "Dispatch Radar" throughout
+   - Command persistence: mobile changes survive cloud refreshes
+   - Morning debrief: shows parsed summary + edit suggestions
+   - Nightly debrief: full edit parity with desktop
+   - Filter tabs: wrap layout (no horizontal scroll)
+   - Map: uses lastKnownLat/lastKnownLon for driver locations
+   - iOS safe area: header/modal no longer overlap system clock
    ═══════════════════════════════════════════════ */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -43,7 +51,6 @@ html, body {
 #app {
   display: flex; flex-direction: column;
   height: 100%; overflow: hidden;
-  padding-top: var(--safe-top);
   padding-bottom: var(--safe-bot);
 }
 
@@ -54,6 +61,7 @@ html, body {
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
   gap: 16px; padding: 30px;
+  padding-top: calc(30px + var(--safe-top));
 }
 
 .pin-screen h2 { font-size: 22px; color: var(--green); font-weight: 800; }
@@ -103,6 +111,7 @@ html, body {
 .hdr {
   background: var(--bg);
   padding: 6px 12px 4px;
+  padding-top: calc(6px + var(--safe-top));
   border-bottom: 1px solid var(--bg3);
   flex-shrink: 0; z-index: 10;
 }
@@ -256,14 +265,11 @@ html, body {
 /* ── Filter tabs ── */
 .filters {
   padding: 0 12px 4px;
-  overflow-x: auto; -webkit-overflow-scrolling: touch;
-  flex-shrink: 0; scrollbar-width: none;
+  flex-shrink: 0;
 }
 
-.filters::-webkit-scrollbar { display: none; }
-
 .filters-row {
-  display: flex; gap: 4px; min-width: max-content;
+  display: flex; flex-wrap: wrap; gap: 4px;
 }
 
 .fbtn {
@@ -272,7 +278,7 @@ html, body {
   padding: 4px 7px; border-radius: 6px;
   font-size: 10px; cursor: pointer;
   white-space: nowrap; font-weight: 600;
-  transition: all .15s; flex-shrink: 0;
+  transition: all .15s;
   user-select: none;
 }
 
@@ -402,6 +408,7 @@ html, body {
   width: 100%; max-width: 500px; max-height: 92vh;
   overflow-y: auto; -webkit-overflow-scrolling: touch;
   padding: 14px 12px calc(14px + var(--safe-bot));
+  padding-top: calc(14px + var(--safe-top));
   animation: slideUp .25s ease;
 }
 
@@ -568,6 +575,7 @@ html, body {
   background: rgba(0,0,0,.8);
   z-index: 200; display: none;
   align-items: center; justify-content: center;
+  padding-top: var(--safe-top);
 }
 
 .station-picker.open { display: flex; }
@@ -663,7 +671,7 @@ html, body {
 
   <!-- ═══ PIN Lock Screen ═══ -->
   <div id="pinScreen" class="pin-screen" style="display:none">
-    <h2>🔒 Mobile Amazon Radar</h2>
+    <h2>🔒 Dispatch Radar</h2>
     <p>Enter your access PIN to continue.</p>
     <input id="pinInput" class="pin-input" type="password" maxlength="6" inputmode="numeric" pattern="[0-9]*" placeholder="••••">
     <button class="pin-submit" onclick="verifyPin()">Unlock</button>
@@ -673,7 +681,7 @@ html, body {
 
   <!-- ═══ Setup Screen ═══ -->
   <div id="setup" class="setup-screen" style="display:none">
-    <h2>Mobile Amazon Radar</h2>
+    <h2>Dispatch Radar</h2>
     <p style="font-size:12px;color:var(--fg2)">Enter Cloud Sync URL to connect.</p>
     <input id="setup-url" class="setup-input" placeholder="https://script.google.com/macros/s/.../exec">
     <p style="font-size:11px;color:var(--fg2);margin-top:8px">Set Access PIN (4-6 digits):</p>
@@ -689,7 +697,7 @@ html, body {
     <div class="hdr">
       <div class="hdr-top">
         <div class="hdr-brand">
-          <div class="title"><span class="dot"></span> Mobile Amazon Radar <span id="stationBadge" class="hdr-station" onclick="openStationPicker()">DJE5</span></div>
+          <div class="title"><span class="dot"></span> Dispatch Radar <span id="stationBadge" class="hdr-station" onclick="openStationPicker()">DJE5</span></div>
           <div class="station-line">
             <span class="sig">By: Andrismar T.</span>
           </div>
@@ -824,7 +832,7 @@ html, body {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════
-//  MOBILE AMAZON RADAR — V4.0
+//  DISPATCH RADAR MOBILE — V5.0
 //  By: Andrismar T.
 //  Desktop-parity mobile companion with PIN security
 // ═══════════════════════════════════════════════════════════
@@ -854,6 +862,119 @@ let leafletMap = null;
 let mapMarkers = [];
 let debriefMode = 'morning'; // 'morning' or 'nightly'
 let nightlyReportData = null;
+
+// ── V5.0: LOCAL COMMAND PERSISTENCE ──
+// Commands sent from mobile are stored locally and re-applied after each
+// cloud fetch until the desktop script adopts them (reflected in cloud data).
+const LS_PENDING_CMDS = 'dispatch_radar_pending_cmds';
+let pendingCommands = []; // [{type, tid, value, extra, ts, field, expected}]
+
+function loadPendingCommands() {
+  try {
+    const raw = localStorage.getItem(LS_PENDING_CMDS);
+    pendingCommands = raw ? JSON.parse(raw) : [];
+    // Expire commands older than 10 minutes — desktop should have processed by then
+    const cutoff = Date.now() - 600000;
+    pendingCommands = pendingCommands.filter(c => c.ts > cutoff);
+    savePendingCommands();
+  } catch(e) { pendingCommands = []; }
+}
+
+function savePendingCommands() {
+  try { localStorage.setItem(LS_PENDING_CMDS, JSON.stringify(pendingCommands)); } catch(e) {}
+}
+
+function addPendingCommand(type, tid, value, extra) {
+  // Remove any existing command of the same type+tid (latest wins)
+  pendingCommands = pendingCommands.filter(c => !(c.type === type && c.tid === tid));
+  pendingCommands.push({ type, tid, value, extra: extra || null, ts: Date.now() });
+  savePendingCommands();
+}
+
+function reapplyPendingCommands() {
+  // After cloud data overwrites memory, re-apply local commands
+  // that the desktop hasn't adopted yet
+  if (!memory.drivers || pendingCommands.length === 0) return;
+
+  let changed = false;
+  const stillPending = [];
+
+  pendingCommands.forEach(cmd => {
+    const d = memory.drivers[cmd.tid];
+    if (!d) { stillPending.push(cmd); return; } // driver not in memory yet, keep
+
+    // Check if the desktop already reflects this change
+    let adopted = false;
+    switch (cmd.type) {
+      case 'pin':
+        adopted = d.isPinned === !!cmd.value && d.isPinnedManually === !!cmd.value;
+        if (!adopted) { d.isPinned = !!cmd.value; d.isPinnedManually = !!cmd.value; changed = true; }
+        break;
+      case 'sweeper':
+        adopted = d.isSweeper === !!cmd.value;
+        if (!adopted) {
+          d.isSweeper = !!cmd.value;
+          if (cmd.value) { d.isPinned = true; d.sweeperManuallySet = true; d.isHelper = false; d.isFlexRoute = false; }
+          changed = true;
+        }
+        break;
+      case 'helper':
+        adopted = d.isHelper === !!cmd.value;
+        if (!adopted) {
+          d.isHelper = !!cmd.value;
+          if (cmd.value) { d.helperManuallySet = true; d.isSweeper = false; d.isFlexRoute = false; }
+          changed = true;
+        }
+        break;
+      case 'flex':
+        adopted = d.isFlexRoute === !!cmd.value;
+        if (!adopted) {
+          d.isFlexRoute = !!cmd.value;
+          if (cmd.value) { d.flexRouteManuallySet = true; d.isSweeper = false; d.isHelper = false; }
+          changed = true;
+        }
+        break;
+      case 'delivered':
+        adopted = d.manuallyDelivered === !!cmd.value;
+        if (!adopted) { d.manuallyDelivered = !!cmd.value; changed = true; }
+        break;
+      case 'inspectionDone':
+        adopted = d.inspectionDone === !!cmd.value;
+        if (!adopted) {
+          d.inspectionDone = !!cmd.value;
+          if (cmd.value) { d.inspectionDoneTime = cmd.ts; d.inspectionManual = true; }
+          changed = true;
+        }
+        break;
+      case 'manualBreak':
+        adopted = d._manualBreak === true && !d.hasNoBreaks;
+        if (!adopted) { d._manualBreak = true; d.hasNoBreaks = false; changed = true; }
+        break;
+      case 'extraPhone':
+        // Extra phone commands are additive — just re-apply the delta
+        if (cmd.extra && cmd.extra.delta) {
+          d.extraPhoneManualDelta = (d.extraPhoneManualDelta || 0) + (cmd.extra.delta || 0);
+          d.extraPhoneCount = Math.max(0, (d._debriefPhoneCount || 0) + (d.extraPhoneManualDelta || 0));
+          d.hasExtraPhone = d.extraPhoneCount > 0;
+          changed = true;
+        }
+        adopted = true; // One-shot, don't keep re-applying deltas
+        break;
+      case 'remove':
+        adopted = d.isRemoved === !!cmd.value;
+        if (!adopted) { d.isRemoved = !!cmd.value; changed = true; }
+        break;
+      default:
+        adopted = true; // Unknown, discard
+    }
+
+    if (!adopted) stillPending.push(cmd);
+  });
+
+  pendingCommands = stillPending;
+  savePendingCommands();
+  if (changed) console.log('[Radar] 📌 Re-applied ' + (pendingCommands.length) + ' pending command(s)');
+}
 
 // ═══════════════════════
 //  PIN SECURITY
@@ -926,6 +1047,7 @@ function boot() {
   m.style.minHeight = '0';
   document.getElementById('stationBadge').textContent = currentStation;
   loadNotifyPrefs();
+  loadPendingCommands();
   fetchData();
   fetchDriverInfo();
   refreshTimer = setInterval(fetchData, REFRESH_MS);
@@ -995,6 +1117,8 @@ async function fetchData() {
     const data = await resp.json();
     if (data && data.drivers) {
       memory = data;
+      // V5.0: Re-apply any pending mobile commands that desktop hasn't adopted yet
+      reapplyPendingCommands();
       lastFetch = Date.now();
       setSyncStatus('live');
       render();
@@ -1080,17 +1204,27 @@ async function sendCommand(type, tid, value, extra) {
   const cmd = { type, tid, value, ts: Date.now() };
   if (extra) Object.assign(cmd, extra);
 
+  // V5.0: Store command locally for persistence across refreshes
+  addPendingCommand(type, tid, value, extra);
+
   // Optimistic local update
   if (memory.drivers && memory.drivers[tid]) {
     const d = memory.drivers[tid];
-    if (type === 'pin') d.isPinned = !!value;
-    if (type === 'sweeper') { d.isSweeper = !!value; if (value) { d.isPinned = true; d.isHelper = false; d.isFlexRoute = false; }}
-    if (type === 'helper') { d.isHelper = !!value; if (value) { d.isSweeper = false; d.isFlexRoute = false; }}
-    if (type === 'flex') { d.isFlexRoute = !!value; if (value) { d.isSweeper = false; d.isHelper = false; }}
+    if (type === 'pin') { d.isPinned = !!value; d.isPinnedManually = !!value; }
+    if (type === 'sweeper') { d.isSweeper = !!value; if (value) { d.isPinned = true; d.sweeperManuallySet = true; d.isHelper = false; d.isFlexRoute = false; }}
+    if (type === 'helper') { d.isHelper = !!value; if (value) { d.helperManuallySet = true; d.isSweeper = false; d.isFlexRoute = false; }}
+    if (type === 'flex') { d.isFlexRoute = !!value; if (value) { d.flexRouteManuallySet = true; d.isSweeper = false; d.isHelper = false; }}
     if (type === 'delivered') d.manuallyDelivered = !!value;
-    if (type === 'inspectionDone') d.inspectionDone = !!value;
+    if (type === 'inspectionDone') { d.inspectionDone = !!value; if (value) { d.inspectionDoneTime = cmd.ts; d.inspectionManual = true; }}
     if (type === 'notify5') d.notify5 = !!value;
     if (type === 'notifyDone') d.notifyDone = !!value;
+    if (type === 'manualBreak') { d._manualBreak = true; d.hasNoBreaks = false; }
+    if (type === 'extraPhone' && extra) {
+      d.extraPhoneManualDelta = (d.extraPhoneManualDelta || 0) + (extra.delta || 0);
+      d.extraPhoneCount = Math.max(0, (d._debriefPhoneCount || 0) + (d.extraPhoneManualDelta || 0));
+      d.hasExtraPhone = d.extraPhoneCount > 0;
+    }
+    if (type === 'remove') d.isRemoved = !!value;
     render();
   }
 
@@ -1582,11 +1716,13 @@ function openModal(tid) {
   // GPS section
   let gpsHtml = '';
   const gpsStatus = gpsStatusText(d);
-  if (d.lat && d.lon && Number.isFinite(d.lat) && Number.isFinite(d.lon)) {
+  const gpsLat = d.lastKnownLat || d.lat;
+  const gpsLon = d.lastKnownLon || d.lon;
+  if (gpsLat && gpsLon && Number.isFinite(gpsLat) && Number.isFinite(gpsLon)) {
     gpsHtml = `<div class="modal-section">
       <div class="modal-section-title" style="color:var(--blue)">📍 GPS Location</div>
-      <div style="font-size:10px;color:var(--fg2);margin-bottom:4px">${gpsStatus} · ${d.lat.toFixed(4)}, ${d.lon.toFixed(4)}</div>
-      <a href="https://maps.apple.com/?ll=${d.lat},${d.lon}&q=${encodeURIComponent(name)}" target="_blank"
+      <div style="font-size:10px;color:var(--fg2);margin-bottom:4px">${gpsStatus} · ${gpsLat.toFixed(4)}, ${gpsLon.toFixed(4)}</div>
+      <a href="https://maps.apple.com/?ll=${gpsLat},${gpsLon}&q=${encodeURIComponent(name)}" target="_blank"
         style="display:block;background:var(--bg);padding:7px;border-radius:6px;text-align:center;color:var(--blue);font-weight:600;font-size:11px;text-decoration:none;border:1px solid var(--bg3)">
         📍 Open in Maps</a>
     </div>`;
@@ -1810,7 +1946,7 @@ function openModal(tid) {
     ${retTbaHtml}
 
     <div style="margin-top:10px;padding-top:6px;border-top:1px solid var(--bg3);font-size:8px;color:var(--fg3)">
-      TID: ${tid} · Station: ${memory.station || currentStation} · Mobile Amazon Radar by Andrismar T.
+      TID: ${tid} · Station: ${memory.station || currentStation} · Dispatch Radar by Andrismar T.
     </div>
   `;
 
@@ -1827,7 +1963,12 @@ function closeModal() {
 
 function openMap() {
   document.getElementById('mapOverlay').classList.add('open');
-  const drivers = getRaw().filter(d => d.lat && d.lon && Number.isFinite(d.lat) && Number.isFinite(d.lon));
+  // V5.0: Use lastKnownLat/lastKnownLon — that's what the desktop stores in cloud memory
+  const drivers = getRaw().filter(d => {
+    const lat = d.lastKnownLat || d.lat;
+    const lon = d.lastKnownLon || d.lon;
+    return lat && lon && Number.isFinite(lat) && Number.isFinite(lon);
+  }).map(d => ({ ...d, _mapLat: d.lastKnownLat || d.lat, _mapLon: d.lastKnownLon || d.lon }));
   document.getElementById('mapCount').textContent = drivers.length + ' on map';
 
   if (!leafletMap) {
@@ -1856,13 +1997,13 @@ function openMap() {
   drivers.forEach(d => {
     const color = d.inspectionDone ? '#22c55e' : d.state === 'INACTIVE' ? '#f59e0b' : d.state === 'ON BREAK' ? '#3b82f6' :
       d.state === 'FINISHED' ? '#10b981' : d.isSweeper ? '#fb923c' : d.isHelper ? '#60a5fa' : d.isFlexRoute ? '#a855f7' : '#10b981';
-    const m = L.circleMarker([d.lat, d.lon], { radius: 7, color, fillColor: color, fillOpacity: .85, weight: 1.5 })
+    const m = L.circleMarker([d._mapLat, d._mapLon], { radius: 7, color, fillColor: color, fillOpacity: .85, weight: 1.5 })
       .bindPopup(`<div style="font-size:11px"><b>${d.route || '?'}</b> ${abbr(d.name)}<br>${d.vehicleId || ''}<br>${dispState(d)}<br>Stops: ${d.stopsCompleted || 0}/${d.stopsTotal || 0}<br>Pace: ${d.pace || '—'}</div>`);
     leafletMap.addLayer(m);
     mapMarkers.push(m);
   });
 
-  const bounds = L.latLngBounds(drivers.map(d => [d.lat, d.lon]));
+  const bounds = L.latLngBounds(drivers.map(d => [d._mapLat, d._mapLon]));
   if (sc2) bounds.extend(sc2);
   leafletMap.fitBounds(bounds, { padding: [30, 30] });
 }
@@ -1898,6 +2039,8 @@ async function renderDebriefBody() {
   if (debriefMode === 'morning') {
     title.innerHTML = '☀️ Morning Debrief';
     saveBtn.style.display = '';
+    saveBtn.textContent = '💾 Save';
+    saveBtn.onclick = saveDebriefToCloud;
     body.innerHTML = `
       <div class="debrief-tabs">
         <button class="debrief-tab active" onclick="switchDebriefMode('morning')">☀️ Morning</button>
@@ -1906,7 +2049,7 @@ async function renderDebriefBody() {
       <p style="font-size:11px;color:var(--fg2);margin-bottom:8px">Paste or edit the morning debrief. Syncs with desktop.</p>
       <textarea class="debrief-textarea" id="debriefText" placeholder="Paste morning debrief here..."></textarea>
       <div id="debriefParsed" style="margin-top:10px"></div>
-      <p style="font-size:8px;color:var(--fg3);text-align:center;margin-top:12px;font-style:italic">Mobile Amazon Radar — By: Andrismar T.</p>
+      <p style="font-size:8px;color:var(--fg3);text-align:center;margin-top:12px;font-style:italic">Dispatch Radar — By: Andrismar T.</p>
     `;
 
     // Load existing debrief from cloud
@@ -1914,9 +2057,23 @@ async function renderDebriefBody() {
       const resp = await fetch(cloudUrl + '?action=debrief&station=' + currentStation);
       const data = await resp.json();
       const ta = document.getElementById('debriefText');
-      if (data && data.raw) {
-        ta.value = data.raw;
-        parseAndShowDebrief(data.raw);
+      // V5.0: Desktop saves as rawText, mobile previously saved as raw — check both
+      const rawContent = data.rawText || data.raw || '';
+      if (rawContent) {
+        ta.value = rawContent;
+        // Show parsed summary of debrief content
+        parseAndShowDebrief(rawContent);
+        // Also show structured data if desktop already parsed it
+        showDebriefStructuredSummary(data);
+      } else if (data && data.attendance && data.attendance.length > 0) {
+        // Desktop saved structured data but no raw text — reconstruct
+        let reconstructed = '';
+        if (data.attendance && data.attendance.length) reconstructed += 'Attendance:\n' + data.attendance.map(a => '• ' + a).join('\n') + '\n\n';
+        if (data.sweepers && data.sweepers.length) reconstructed += 'Sweeper:\n' + data.sweepers.map(s => '• ' + (s.name || s)).join('\n') + '\n\n';
+        if (data.extraPhones && data.extraPhones.length) reconstructed += 'Extra Phones:\n' + data.extraPhones.map(ep => '• ' + (ep.name || ep)).join('\n') + '\n\n';
+        ta.value = reconstructed;
+        parseAndShowDebrief(reconstructed);
+        showDebriefStructuredSummary(data);
       } else {
         ta.value = '';
       }
@@ -1926,7 +2083,9 @@ async function renderDebriefBody() {
     }
   } else {
     title.innerHTML = '🌙 Nightly Debrief';
-    saveBtn.style.display = 'none';
+    saveBtn.style.display = '';
+    saveBtn.textContent = '💾 Save';
+    saveBtn.onclick = saveNightlyToCloud;
     body.innerHTML = `
       <div class="debrief-tabs">
         <button class="debrief-tab" onclick="switchDebriefMode('morning')">☀️ Morning</button>
@@ -1955,18 +2114,22 @@ async function renderDebriefBody() {
 
 function renderNightlyReport(rpt) {
   const body = document.getElementById('debriefBody');
-  if (!rpt || !rpt.lastDate) {
-    body.innerHTML = `
-      <div class="debrief-tabs">
-        <button class="debrief-tab" onclick="switchDebriefMode('morning')">☀️ Morning</button>
-        <button class="debrief-tab active" onclick="switchDebriefMode('nightly')">🌙 Nightly</button>
-      </div>
-      <div class="empty"><p>No nightly report available. Generate one from the desktop version first.</p></div>
-    `;
-    return;
+  const saveBtn = document.getElementById('debriefSaveBtn');
+  // V5.0: Show save button for nightly too
+  saveBtn.style.display = '';
+  saveBtn.onclick = saveNightlyToCloud;
+
+  if (!rpt || (!rpt.lastDate && !rpt.closingDispatcher1)) {
+    // No report yet — show editable blank form
+    rpt = {};
   }
 
-  // Build a read-only view of the nightly report
+  nightlyReportData = rpt;
+
+  const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const dateStr = rpt.lastDate || nowET.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+
+  // V5.0: Fully editable nightly report form — matching desktop fields
   let html = `
     <div class="debrief-tabs">
       <button class="debrief-tab" onclick="switchDebriefMode('morning')">☀️ Morning</button>
@@ -1974,56 +2137,154 @@ function renderNightlyReport(rpt) {
     </div>
     <div style="text-align:center;margin-bottom:10px">
       <div style="font-size:16px;font-weight:800;color:var(--indigo)">🌙 Nightly Report</div>
-      <div style="font-size:11px;color:var(--fg3)">${rpt.lastDate || ''} · ${rpt.station || currentStation}</div>
+      <div style="font-size:11px;color:var(--fg3)">${dateStr} · ${rpt.station || currentStation}</div>
     </div>
-  `;
 
-  // Closing team
-  if (rpt.closingDispatcher1 || rpt.closingDispatcher2) {
-    html += `<div class="modal-section">
+    <!-- Closing Team -->
+    <div class="modal-section">
       <div class="modal-section-title" style="color:var(--indigo)">👥 Closing Team</div>
-      <div style="font-size:11px;color:var(--fg)">${rpt.closingDispatcher1 || 'N/A'} · ${rpt.closingDispatcher2 || 'N/A'}</div>
-    </div>`;
-  }
+      <div style="display:flex;gap:6px;margin-top:4px">
+        <input class="staples-input" id="nr_disp1" placeholder="Dispatcher 1" value="${_esc(rpt.closingDispatcher1)}" style="flex:1;font-size:12px;padding:6px 8px">
+        <input class="staples-input" id="nr_disp2" placeholder="Dispatcher 2" value="${_esc(rpt.closingDispatcher2)}" style="flex:1;font-size:12px;padding:6px 8px">
+      </div>
+    </div>
 
-  // Phones
-  if (rpt.phonesUsed !== undefined) {
-    html += `<div class="modal-section">
+    <!-- Phones -->
+    <div class="modal-section">
       <div class="modal-section-title" style="color:var(--blue)">📱 Phones</div>
-      <div style="font-size:10px;color:var(--fg2)">Used: ${rpt.phonesUsed || 0} · Back: ${rpt.phonesBack || 0} · Total: ${rpt.phonesTotal || 0} · In Repair: ${rpt.phonesRepair || 0}</div>
-    </div>`;
-  }
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px">
+        <div><div style="font-size:9px;color:var(--fg3);margin-bottom:2px">Used</div><input class="staples-input" id="nr_phonesUsed" type="number" inputmode="numeric" value="${rpt.phonesUsed||''}" style="font-size:12px;padding:6px 8px"></div>
+        <div><div style="font-size:9px;color:var(--fg3);margin-bottom:2px">Back</div><input class="staples-input" id="nr_phonesBack" type="number" inputmode="numeric" value="${rpt.phonesBack||''}" style="font-size:12px;padding:6px 8px"></div>
+        <div><div style="font-size:9px;color:var(--fg3);margin-bottom:2px">Total</div><input class="staples-input" id="nr_phonesTotal" type="number" inputmode="numeric" value="${rpt.phonesTotal||''}" style="font-size:12px;padding:6px 8px"></div>
+        <div><div style="font-size:9px;color:var(--fg3);margin-bottom:2px">In Repair</div><input class="staples-input" id="nr_phonesRepair" type="number" inputmode="numeric" value="${rpt.phonesRepair||''}" style="font-size:12px;padding:6px 8px"></div>
+      </div>
+    </div>
 
-  // Gas cards
-  if (rpt.gasUsed !== undefined) {
-    html += `<div class="modal-section">
+    <!-- Gas Cards -->
+    <div class="modal-section">
       <div class="modal-section-title" style="color:var(--amber)">⛽ Gas Cards</div>
-      <div style="font-size:10px;color:var(--fg2)">Used: ${rpt.gasUsed || 0} · Back: ${rpt.gasBack || 0} · Total: ${rpt.gasTotal || 0}</div>
-    </div>`;
-  }
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:4px">
+        <div><div style="font-size:9px;color:var(--fg3);margin-bottom:2px">Used</div><input class="staples-input" id="nr_gasUsed" type="number" inputmode="numeric" value="${rpt.gasUsed||''}" style="font-size:12px;padding:6px 8px"></div>
+        <div><div style="font-size:9px;color:var(--fg3);margin-bottom:2px">Back</div><input class="staples-input" id="nr_gasBack" type="number" inputmode="numeric" value="${rpt.gasBack||''}" style="font-size:12px;padding:6px 8px"></div>
+        <div><div style="font-size:9px;color:var(--fg3);margin-bottom:2px">Total</div><input class="staples-input" id="nr_gasTotal" type="number" inputmode="numeric" value="${rpt.gasTotal||''}" style="font-size:12px;padding:6px 8px"></div>
+      </div>
+    </div>
 
-  // Additional comments
-  if (rpt.comments && rpt.comments.some(c => c && c.trim())) {
-    html += `<div class="modal-section">
-      <div class="modal-section-title" style="color:var(--fg)">💬 Comments</div>`;
-    rpt.comments.filter(c => c && c.trim()).forEach(c => {
-      html += `<div style="font-size:10px;color:var(--fg2);padding:2px 0;border-bottom:1px solid var(--bg3)">${c}</div>`;
-    });
-    html += '</div>';
-  }
+    <!-- Comments -->
+    <div class="modal-section">
+      <div class="modal-section-title" style="color:var(--fg)">💬 Comments</div>
+      <textarea class="debrief-textarea" id="nr_comments" placeholder="Add comments..." style="min-height:80px;margin-top:4px">${_esc((rpt.comments || []).filter(c=>c&&c.trim()).join('\n'))}</textarea>
+    </div>
 
-  // Permanent comments
-  if (rpt.permComments && rpt.permComments.some(c => c && c.trim())) {
-    html += `<div class="modal-section">
-      <div class="modal-section-title" style="color:var(--violet)">📌 Permanent Comments</div>`;
-    rpt.permComments.filter(c => c && c.trim()).forEach(c => {
-      html += `<div style="font-size:10px;color:var(--fg2);padding:2px 0;border-bottom:1px solid var(--bg3)">${c}</div>`;
-    });
-    html += '</div>';
-  }
+    <!-- Permanent Comments -->
+    <div class="modal-section">
+      <div class="modal-section-title" style="color:var(--violet)">📌 Permanent Comments</div>
+      <textarea class="debrief-textarea" id="nr_permComments" placeholder="Permanent notes..." style="min-height:60px;margin-top:4px">${_esc((rpt.permComments || []).filter(c=>c&&c.trim()).join('\n'))}</textarea>
+    </div>
 
-  html += `<p style="font-size:8px;color:var(--fg3);text-align:center;margin-top:12px;font-style:italic">Mobile Amazon Radar — By: Andrismar T.</p>`;
+    <!-- Action Buttons -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+      <button class="hdr-btn" onclick="saveNightlyToCloud()" style="flex:1;padding:10px;font-size:12px;color:var(--green);border-color:var(--green)">💾 Save</button>
+      <button class="hdr-btn" onclick="copyNightlyReport()" style="flex:1;padding:10px;font-size:12px;color:var(--blue);border-color:var(--blue)">📋 Copy Report</button>
+    </div>
+
+    <!-- Preview -->
+    <div style="margin-top:10px;background:#050b14;border:1px solid var(--bg3);border-radius:7px;padding:10px">
+      <div style="font-size:9px;font-weight:700;color:#3a5070;text-transform:uppercase;margin-bottom:6px">REPORT PREVIEW</div>
+      <div id="nightlyPreview" style="font-size:10px;color:#a8bfd4;white-space:pre-wrap;line-height:1.6"></div>
+    </div>
+
+    <p style="font-size:8px;color:var(--fg3);text-align:center;margin-top:12px;font-style:italic">Dispatch Radar — By: Andrismar T.</p>
+  `;
   body.innerHTML = html;
+  updateNightlyPreview();
+
+  // Live preview on input
+  ['nr_disp1','nr_disp2','nr_phonesUsed','nr_phonesBack','nr_phonesTotal','nr_phonesRepair','nr_gasUsed','nr_gasBack','nr_gasTotal','nr_comments','nr_permComments'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', updateNightlyPreview);
+  });
+}
+
+function _esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function getNightlyFormData() {
+  return {
+    closingDispatcher1: (document.getElementById('nr_disp1') || {}).value || '',
+    closingDispatcher2: (document.getElementById('nr_disp2') || {}).value || '',
+    phonesUsed: parseInt((document.getElementById('nr_phonesUsed') || {}).value) || 0,
+    phonesBack: parseInt((document.getElementById('nr_phonesBack') || {}).value) || 0,
+    phonesTotal: parseInt((document.getElementById('nr_phonesTotal') || {}).value) || 0,
+    phonesRepair: parseInt((document.getElementById('nr_phonesRepair') || {}).value) || 0,
+    gasUsed: parseInt((document.getElementById('nr_gasUsed') || {}).value) || 0,
+    gasBack: parseInt((document.getElementById('nr_gasBack') || {}).value) || 0,
+    gasTotal: parseInt((document.getElementById('nr_gasTotal') || {}).value) || 0,
+    comments: ((document.getElementById('nr_comments') || {}).value || '').split('\n').filter(l => l.trim()),
+    permComments: ((document.getElementById('nr_permComments') || {}).value || '').split('\n').filter(l => l.trim()),
+    station: nightlyReportData?.station || currentStation,
+    lastDate: nightlyReportData?.lastDate || new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium' }),
+    source: 'mobile',
+    lastUpdated: Date.now()
+  };
+}
+
+function buildNightlyReportText(rpt) {
+  const d = rpt.lastDate || new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
+  let t = `🌙 NIGHTLY REPORT — ${rpt.station || currentStation}\n`;
+  t += `Date: ${d}\n\n`;
+  t += `👥 Closing Team: ${rpt.closingDispatcher1 || 'N/A'} · ${rpt.closingDispatcher2 || 'N/A'}\n\n`;
+  t += `📱 Phones:\n`;
+  t += `  • Used: ${rpt.phonesUsed || 0}\n  • Back: ${rpt.phonesBack || 0}\n  • Total: ${rpt.phonesTotal || 0}\n  • In Repair: ${rpt.phonesRepair || 0}\n\n`;
+  t += `⛽ Gas Cards:\n`;
+  t += `  • Used: ${rpt.gasUsed || 0}\n  • Back: ${rpt.gasBack || 0}\n  • Total: ${rpt.gasTotal || 0}\n\n`;
+  if (rpt.comments && rpt.comments.length) {
+    t += `💬 Comments:\n` + rpt.comments.map(c => `  • ${c}`).join('\n') + '\n\n';
+  }
+  if (rpt.permComments && rpt.permComments.length) {
+    t += `📌 Permanent Comments:\n` + rpt.permComments.map(c => `  • ${c}`).join('\n') + '\n';
+  }
+  return t;
+}
+
+function updateNightlyPreview() {
+  const el = document.getElementById('nightlyPreview');
+  if (!el) return;
+  el.textContent = buildNightlyReportText(getNightlyFormData());
+}
+
+async function saveNightlyToCloud() {
+  if (debriefMode !== 'nightly') {
+    // Morning debrief save
+    saveDebriefToCloud();
+    return;
+  }
+  const rptData = getNightlyFormData();
+  const btn = document.getElementById('debriefSaveBtn');
+  btn.textContent = '⏳ Saving...';
+
+  try {
+    await fetch(cloudUrl + '?action=report&station=global', {
+      method: 'POST', mode: 'cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(rptData)
+    });
+    nightlyReportData = rptData;
+    btn.textContent = '✅ Saved!';
+    showToast('Nightly report saved to cloud');
+    setTimeout(() => { btn.textContent = '💾 Save'; }, 2000);
+  } catch(e) {
+    btn.textContent = '✗ Failed';
+    showToast('Save failed', true);
+    setTimeout(() => { btn.textContent = '💾 Save'; }, 2000);
+  }
+}
+
+function copyNightlyReport() {
+  const text = buildNightlyReportText(getNightlyFormData());
+  navigator.clipboard.writeText(text).then(() => showToast('📋 Report copied!')).catch(() => {
+    const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); showToast('📋 Copied!');
+  });
 }
 
 async function saveDebriefToCloud() {
@@ -2036,7 +2297,8 @@ async function saveDebriefToCloud() {
   btn.textContent = '⏳ Saving...';
 
   const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const payload = { raw: text, date: nowET.toDateString(), station: currentStation, source: 'mobile' };
+  // V5.0: Use rawText to match desktop debrief format, keep raw for backwards compat
+  const payload = { rawText: text, raw: text, date: nowET.toDateString(), station: currentStation, source: 'mobile' };
 
   try {
     await fetch(cloudUrl + '?action=debrief&station=' + currentStation, {
@@ -2086,9 +2348,40 @@ function parseAndShowDebrief(text) {
   el.innerHTML = html;
 }
 
-// ═══════════════════════
-//  REPORTS (quick view)
-// ═══════════════════════
+// V5.0: Show structured summary from desktop-parsed debrief data
+function showDebriefStructuredSummary(data) {
+  const el = document.getElementById('debriefParsed');
+  if (!el) return;
+  let html = el.innerHTML || '';
+
+  // If desktop already parsed attendance, sweepers, etc., show a rich summary
+  if (data.attendance && data.attendance.length > 0 && !html.includes('Attendance')) {
+    html += `<div style="margin-top:8px;padding:8px;background:var(--bg2);border-radius:6px;border:1px solid var(--bg3)">
+      <div style="font-size:10px;font-weight:700;color:var(--green);margin-bottom:4px">✅ Attendance (${data.attendance.length})</div>
+      <div style="font-size:10px;color:var(--fg2)">${data.attendance.join(', ')}</div>
+    </div>`;
+  }
+  if (data.sweepers && data.sweepers.length > 0 && !html.includes('Sweepers')) {
+    html += `<div style="margin-top:4px;padding:8px;background:var(--bg2);border-radius:6px;border:1px solid var(--bg3)">
+      <div style="font-size:10px;font-weight:700;color:var(--orange);margin-bottom:4px">🧹 Sweepers (${data.sweepers.length})</div>
+      <div style="font-size:10px;color:var(--fg2)">${data.sweepers.map(s => s.name || s).join(', ')}</div>
+    </div>`;
+  }
+  if (data.extraPhones && data.extraPhones.length > 0 && !html.includes('Extra Phones')) {
+    html += `<div style="margin-top:4px;padding:8px;background:var(--bg2);border-radius:6px;border:1px solid var(--bg3)">
+      <div style="font-size:10px;font-weight:700;color:#f97316;margin-bottom:4px">📱 Extra Phones (${data.extraPhones.length})</div>
+      <div style="font-size:10px;color:var(--fg2)">${data.extraPhones.map(ep => ep.name || ep).join(', ')}</div>
+    </div>`;
+  }
+  if (data.rescues && data.rescues.length > 0) {
+    html += `<div style="margin-top:4px;padding:8px;background:var(--bg2);border-radius:6px;border:1px solid var(--bg3)">
+      <div style="font-size:10px;font-weight:700;color:var(--amber);margin-bottom:4px">🆘 Rescues (${data.rescues.length})</div>
+      <div style="font-size:10px;color:var(--fg2)">${data.rescues.map(r => (r.helper || '?') + ' → ' + (r.target || '?')).join('<br>')}</div>
+    </div>`;
+  }
+
+  el.innerHTML = html;
+}
 
 function openReports() {
   // Quick fleet summary
@@ -2267,7 +2560,7 @@ function openSettings() {
       <button class="hdr-btn" style="width:100%;padding:10px;color:var(--red);border-color:var(--red)" onclick="if(confirm('Clear all local data and reset?')){localStorage.clear();sessionStorage.clear();location.reload()}">Reset Everything</button>
     </div>
     <div style="text-align:center;color:var(--fg3);font-size:10px;margin-top:20px">
-      <div>Mobile Amazon Radar V4.0</div>
+      <div>Dispatch Radar V5.0</div>
       <div style="font-style:italic">By: Andrismar T.</div>
     </div>
   `;
