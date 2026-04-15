@@ -703,6 +703,7 @@ html, body {
           </div>
         </div>
         <div class="hdr-controls">
+          <button class="hdr-btn" onclick="toggleInspCompact()" id="inspToggleBtn" title="Toggle INSP DONE compact/expanded">🔒</button>
           <button class="hdr-btn" onclick="forceRefresh()" id="refreshBtn" title="Refresh">↻</button>
           <button class="hdr-btn" onclick="openSettings()" title="Settings">⚙</button>
         </div>
@@ -840,7 +841,7 @@ html, body {
 // ── Configuration ──
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyh90Qa9FuE_tHyZ9T-rQyOOtwFeZxVt-4iUB_LOtyoupoBU8xp-xPUKCXF1EJrjzPCPQ/exec';
 const STATIONS = ['DJE5', 'DJZ6', 'DYY6', 'DNJ4'];
-const REFRESH_MS = 30000;
+const REFRESH_MS = 20000; // V5.1: was 30s, reduced for fresher data
 const LS_URL = 'dispatch_radar_url';
 const LS_STA = 'dispatch_radar_station';
 const LS_PIN = 'dispatch_radar_pin';
@@ -858,6 +859,7 @@ let searchQuery = '';
 let isRefreshing = false;
 let sortMode = 0;
 const SORT_NAMES = ['Route', 'Stops ↓', 'Pkgs ↓', 'Behind', 'Pace'];
+let inspExpanded = false; // V5.1: 🔒 compact / 🔓 expanded for INSP DONE cards
 let leafletMap = null;
 let mapMarkers = [];
 let debriefMode = 'morning'; // 'morning' or 'nightly'
@@ -1104,14 +1106,18 @@ function saveNotifyPrefs() {
 //  DATA FETCHING
 // ═══════════════════════
 
+// V5.1: Cache-buster — Google Apps Script CDN caches GET responses
+// aggressively. Adding a unique _t param forces a fresh read each time.
+function _cb(url) { return url + '&_t=' + Date.now(); }
+
 async function fetchData() {
   if (isRefreshing) return;
   isRefreshing = true;
   setSyncStatus('syncing');
 
   try {
-    const resp = await fetch(cloudUrl + '?station=' + currentStation, {
-      method: 'GET', mode: 'cors', cache: 'no-cache'
+    const resp = await fetch(_cb(cloudUrl + '?station=' + currentStation), {
+      method: 'GET', mode: 'cors', cache: 'no-store'
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
@@ -1140,7 +1146,7 @@ async function fetchData() {
 // ── Driver Info (personal phone, email, flex) from cloud ──
 async function fetchDriverInfo() {
   try {
-    const resp = await fetch(cloudUrl + '?action=driverInfo&station=' + currentStation, { mode: 'cors', cache: 'no-cache' });
+    const resp = await fetch(_cb(cloudUrl + '?action=driverInfo&station=' + currentStation), { mode: 'cors', cache: 'no-store' });
     const data = await resp.json();
     if (data && data.drivers) {
       driverInfoMap = data.drivers;
@@ -1177,6 +1183,20 @@ function forceRefresh() {
   btn.style.transition = 'transform .5s';
   setTimeout(() => { btn.style.transform = ''; btn.style.transition = ''; }, 600);
   fetchData();
+}
+
+// V5.1: Toggle INSP DONE cards between compact (🔒) and expanded (🔓) mode
+function toggleInspCompact() {
+  inspExpanded = !inspExpanded;
+  const btn = document.getElementById('inspToggleBtn');
+  btn.textContent = inspExpanded ? '🔓' : '🔒';
+  btn.title = inspExpanded ? 'Lock — compact INSP DONE cards' : 'Unlock — expand INSP DONE cards';
+  if (inspExpanded) {
+    btn.classList.add('active');
+  } else {
+    btn.classList.remove('active');
+  }
+  renderDriverList();
 }
 
 function setSyncStatus(status, detail) {
@@ -1616,8 +1636,8 @@ function buildCard(d) {
   const noBreakWarn = isAfter330 && d.hasNoBreaks && !d.inspectionDone && !d.isRemoved &&
     d.state !== 'ON BREAK' && d.state !== 'FINISHED' && !d.isSweeper && !d.isFlexRoute && !d.isHelper;
 
-  // Inspection done compact card
-  if (d.inspectionDone && !d.isRemoved) {
+  // Inspection done compact card (V5.1: only when locked/compact mode)
+  if (d.inspectionDone && !d.isRemoved && !inspExpanded) {
     const label = d.isSweeper ? '<span style="color:#fb923c;font-weight:800">🧹 SWP</span>'
       : d.isFlexRoute ? '<span style="color:#a855f7;font-weight:800">📦 FLX</span>'
       : `<span style="color:#fff;font-weight:800">${d.route || ''}</span>`;
@@ -2090,7 +2110,7 @@ async function renderDebriefBody() {
 
     // Load existing debrief from cloud
     try {
-      const resp = await fetch(cloudUrl + '?action=debrief&station=' + currentStation);
+      const resp = await fetch(_cb(cloudUrl + '?action=debrief&station=' + currentStation));
       const data = await resp.json();
       const ta = document.getElementById('debriefText');
       // V5.0: Desktop saves as rawText, mobile previously saved as raw — check both
@@ -2132,7 +2152,7 @@ async function renderDebriefBody() {
 
     // Load nightly report from cloud
     try {
-      const resp = await fetch(cloudUrl + '?action=report&station=global');
+      const resp = await fetch(_cb(cloudUrl + '?action=report&station=global'));
       const data = await resp.json();
       nightlyReportData = data;
       renderNightlyReport(data);
@@ -2485,7 +2505,7 @@ let staplesData = { itinerary: '', scanned: '', totalReturns: '', manager: '' };
 async function openStaples() {
   document.getElementById('staplesOverlay').classList.add('open');
   try {
-    const resp = await fetch(cloudUrl + '?action=staples&station=' + currentStation);
+    const resp = await fetch(_cb(cloudUrl + '?action=staples&station=' + currentStation));
     const data = await resp.json();
     if (data && data.itinerary !== undefined) staplesData = data;
   } catch (e) {}
