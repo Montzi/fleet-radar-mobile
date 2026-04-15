@@ -1120,7 +1120,10 @@ async function fetchData() {
       // V5.0: Re-apply any pending mobile commands that desktop hasn't adopted yet
       reapplyPendingCommands();
       lastFetch = Date.now();
-      setSyncStatus('live');
+      // V5.0: Detect data freshness from desktop's lastUpdated timestamp
+      const dataAge = memory.lastUpdated ? Date.now() - memory.lastUpdated : null;
+      const isStale = dataAge && dataAge > 120000; // >2 minutes = stale
+      setSyncStatus(isStale ? 'stale' : 'live', dataAge);
       render();
     } else {
       setSyncStatus('empty');
@@ -1183,17 +1186,38 @@ function setSyncStatus(status, detail) {
 
   if (status === 'live') {
     dot.classList.add('live');
-    label.textContent = '● Synced · ' + new Date(lastFetch).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const ageStr = detail ? formatDataAge(detail) : '';
+    label.textContent = '● Synced · ' + new Date(lastFetch).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + (ageStr ? ' · Data: ' + ageStr : '');
+    label.style.color = '';
     document.getElementById('syncBtn').classList.add('synced');
+  } else if (status === 'stale') {
+    dot.classList.add('err');
+    const ageStr = detail ? formatDataAge(detail) : '?';
+    label.innerHTML = '⚠ Data is <b style="color:var(--amber)">' + ageStr + ' old</b> — desktop may not be pushing';
+    label.style.color = 'var(--amber)';
+    document.getElementById('syncBtn').classList.remove('synced');
   } else if (status === 'syncing') {
     label.textContent = '☁️ Syncing...';
+    label.style.color = '';
     document.getElementById('syncBtn').classList.remove('synced');
   } else if (status === 'error') {
     dot.classList.add('err');
     label.textContent = '✗ ' + (detail || 'Offline');
+    label.style.color = '';
   } else if (status === 'empty') {
     label.textContent = '⚠ No data for ' + currentStation;
+    label.style.color = '';
   }
+}
+
+function formatDataAge(ms) {
+  if (!ms || ms < 0) return '';
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm ' + (s % 60) + 's';
+  const h = Math.floor(m / 60);
+  return h + 'h ' + (m % 60) + 'm';
 }
 
 // ═══════════════════════
@@ -1527,8 +1551,20 @@ function renderDriverList() {
 
   // Sort
   drivers.sort((a, b) => {
+    // V5.0: INSP DONE goes to the bottom (matching desktop behavior)
+    const aInsp = a.inspectionDone && !a.isRemoved ? 1 : 0;
+    const bInsp = b.inspectionDone && !b.isRemoved ? 1 : 0;
+    if (aInsp !== bInsp) return aInsp - bInsp; // non-insp first, insp last
+
+    // Within INSP DONE group: most recent inspection on top
+    if (aInsp && bInsp) {
+      return (b.inspectionDoneTime || 0) - (a.inspectionDoneTime || 0);
+    }
+
+    // Pinned drivers on top
     if (a.isPinned && !b.isPinned) return -1;
     if (!a.isPinned && b.isPinned) return 1;
+    // Sweepers after pinned
     if (a.isSweeper && !b.isSweeper) return -1;
     if (!a.isSweeper && b.isSweeper) return 1;
     switch (sortMode) {
@@ -2606,11 +2642,23 @@ setInterval(() => {
     const ago = Math.round((Date.now() - lastFetch) / 1000);
     const label = document.getElementById('syncLabel');
     if (!label) return;
-    if (ago < 5) label.textContent = '● Synced just now';
-    else if (ago < 60) label.textContent = `● Synced ${ago}s ago`;
-    else label.textContent = `● Synced ${Math.floor(ago / 60)}m ago`;
-    const dot = document.getElementById('syncDot');
-    if (dot) dot.classList.toggle('live', ago < REFRESH_MS / 1000);
+    // V5.0: Show both fetch age AND data age
+    const dataAge = memory.lastUpdated ? Date.now() - memory.lastUpdated : null;
+    const isStale = dataAge && dataAge > 120000;
+    const dataAgeStr = dataAge ? formatDataAge(dataAge) : '';
+    if (isStale) {
+      label.innerHTML = '⚠ Data is <b style="color:var(--amber)">' + dataAgeStr + ' old</b> — desktop may not be pushing';
+      label.style.color = 'var(--amber)';
+      const dot = document.getElementById('syncDot');
+      if (dot) { dot.className = 'sync-dot err'; }
+    } else {
+      if (ago < 5) label.textContent = '● Synced just now' + (dataAgeStr ? ' · Data: ' + dataAgeStr : '');
+      else if (ago < 60) label.textContent = `● Synced ${ago}s ago` + (dataAgeStr ? ' · Data: ' + dataAgeStr : '');
+      else label.textContent = `● Synced ${Math.floor(ago / 60)}m ago` + (dataAgeStr ? ' · Data: ' + dataAgeStr : '');
+      label.style.color = '';
+      const dot = document.getElementById('syncDot');
+      if (dot) dot.classList.toggle('live', ago < REFRESH_MS / 1000);
+    }
   }
 }, 1000);
 
