@@ -862,6 +862,8 @@ const SORT_NAMES = ['Route', 'Stops ↓', 'Pkgs ↓', 'Behind', 'Pace'];
 let inspExpanded = false; // V5.1: 🔒 compact / 🔓 expanded for INSP DONE cards
 let inactiveSubTab = 'current'; // 'current' or 'history'
 let inspectionsList = []; // cached cloud inspections
+let mobileDefects = { vehicles: [], ts: 0, shiftDate: '' }; // V5.1: from cloud
+let mobileAvi = { data: [], ts: 0, shiftDate: '' }; // V5.1: from cloud
 let leafletMap = null;
 let mapMarkers = [];
 let debriefMode = 'morning'; // 'morning' or 'nightly'
@@ -1054,9 +1056,14 @@ function boot() {
   loadPendingCommands();
   fetchData();
   fetchDriverInfo();
+  fetchDefects();
+  fetchAvi();
   refreshTimer = setInterval(fetchData, REFRESH_MS);
   // Refresh driver info every 5 minutes
   setInterval(fetchDriverInfo, 300000);
+  // Refresh defects and AVI every 60 seconds
+  setInterval(fetchDefects, 60000);
+  setInterval(fetchAvi, 60000);
 }
 
 function saveSetup() {
@@ -1179,12 +1186,54 @@ function getBestDriverInfo(name) {
   return null;
 }
 
+// V5.1: Get today's shift date (accounts for post-midnight = yesterday's shift)
+function getShiftDateStr() {
+  const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  if (et.getHours() < 2) et.setDate(et.getDate() - 1);
+  return et.toISOString().slice(0, 10);
+}
+
+// V5.1: Fetch defects from cloud
+async function fetchDefects() {
+  try {
+    const resp = await fetch(_cb(cloudUrl + '?action=defectsSync&station=' + currentStation), { mode: 'cors', cache: 'no-store' });
+    const data = await resp.json();
+    if (data && Array.isArray(data.vehicles)) {
+      // Only use data from today's shift (reset at 2AM)
+      if (data.shiftDate && data.shiftDate !== getShiftDateStr()) {
+        mobileDefects = { vehicles: [], ts: 0, shiftDate: '' };
+      } else {
+        mobileDefects = data;
+      }
+      console.log('[Radar] Defects loaded:', mobileDefects.vehicles.length, 'vehicles');
+    }
+  } catch(e) { console.log('[Radar] Defects fetch error:', e.message); }
+}
+
+// V5.1: Fetch AVI from cloud
+async function fetchAvi() {
+  try {
+    const resp = await fetch(_cb(cloudUrl + '?action=aviSync&station=' + currentStation), { mode: 'cors', cache: 'no-store' });
+    const data = await resp.json();
+    if (data && Array.isArray(data.data)) {
+      if (data.shiftDate && data.shiftDate !== getShiftDateStr()) {
+        mobileAvi = { data: [], ts: 0, shiftDate: '' };
+      } else {
+        mobileAvi = data;
+      }
+      console.log('[Radar] AVI loaded:', mobileAvi.data.length, 'entries');
+    }
+  } catch(e) { console.log('[Radar] AVI fetch error:', e.message); }
+}
+
 function forceRefresh() {
   const btn = document.getElementById('refreshBtn');
   btn.style.transform = 'rotate(360deg)';
   btn.style.transition = 'transform .5s';
   setTimeout(() => { btn.style.transform = ''; btn.style.transition = ''; }, 600);
   fetchData();
+  fetchDefects();
+  fetchAvi();
 }
 
 // V5.1: Toggle INSP DONE cards between compact (🔒) and expanded (🔓) mode
@@ -1665,21 +1714,149 @@ function renderDriverList() {
 
   // ── AVI ──
   if (activeFilter === 'AVI') {
-    el.innerHTML = `<div style="text-align:center;padding:20px">
-      <div style="font-size:24px;margin-bottom:8px">📋</div>
-      <div style="font-size:12px;color:var(--fg2);margin-bottom:6px">AVI data is scraped from the Fleet Management page and is only available on desktop.</div>
-      <div style="font-size:10px;color:var(--fg3)">Open the desktop Dispatch Radar to view AVI completions.</div>
-    </div>`;
+    const aviEntries = (mobileAvi.data || []);
+    if (!aviEntries.length) {
+      const lastSync = mobileAvi.ts ? new Date(mobileAvi.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : 'Never';
+      el.innerHTML = `<div style="text-align:center;padding:20px">
+        <div style="font-size:24px;margin-bottom:8px">📋</div>
+        <div style="font-size:12px;color:var(--fg2);margin-bottom:4px">No AVI data available</div>
+        <div style="font-size:10px;color:var(--fg3)">Last sync: ${lastSync}</div>
+        <div style="font-size:9px;color:var(--fg3);margin-top:6px">AVI data syncs from the desktop Dispatch Radar.<br>Desktop fetches AVIs after 2:30 PM ET.</div>
+      </div>`;
+      return;
+    }
+    // Match to active drivers
+    let aviList = aviEntries.map(e => {
+      let matchedDriver = null;
+      const eName = (e.driverName || '').toLowerCase().trim();
+      Object.entries(memory.drivers || {}).forEach(([tid, d]) => {
+        if (matchedDriver) return;
+        const dName = (d.name || '').toLowerCase().trim();
+        if (eName && dName && (eName.includes(dName) || dName.includes(eName))) {
+          matchedDriver = { name: d.name, route: d.route, tid };
+        }
+      });
+      return { ...e, matchedDriver };
+    });
+    // Search filter
+    if (searchQuery) {
+      aviList = aviList.filter(e =>
+        (e.driverName || '').toLowerCase().includes(searchQuery) ||
+        (e.vehicle || '').toLowerCase().includes(searchQuery)
+      );
+    }
+    // Sort: incomplete first
+    aviList.sort((a, b) => {
+      if (!a.completed && b.completed) return -1;
+      if (a.completed && !b.completed) return 1;
+      return (a.driverName || '').localeCompare(b.driverName || '');
+    });
+    const completedCount = aviList.filter(e => e.completed).length;
+    const missingCount = aviList.filter(e => !e.completed).length;
+    const lastSync = mobileAvi.ts ? new Date(mobileAvi.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '?';
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-weight:700;color:#60a5fa;font-size:12px">📋 AVI Completions (${aviEntries.length})</span>
+        <span style="font-size:9px;color:var(--fg3)">Synced: ${lastSync}</span>
+      </div>
+      <div style="display:flex;gap:4px;margin-bottom:8px">
+        <div style="flex:1;background:#10b98120;border:1px solid #10b98140;border-radius:6px;padding:5px;text-align:center">
+          <div style="font-size:14px;font-weight:700;color:var(--green)">${completedCount}</div>
+          <div style="font-size:8px;color:var(--fg3)">COMPLETED</div>
+        </div>
+        <div style="flex:1;background:#ef444420;border:1px solid #ef444440;border-radius:6px;padding:5px;text-align:center">
+          <div style="font-size:14px;font-weight:700;color:var(--red)">${missingCount}</div>
+          <div style="font-size:8px;color:var(--fg3)">MISSING</div>
+        </div>
+      </div>
+      ${aviList.map(e => `
+        <div style="padding:5px 8px;margin-bottom:3px;border-radius:5px;background:#0f172a;border-left:3px solid ${e.completed ? 'var(--green)' : 'var(--red)'};font-size:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="color:#fff;font-weight:700">${e.completed ? '✅' : '❌'} ${e.driverName || 'Unknown'}</span>
+            <span style="background:${e.completed ? '#10b98140' : '#ef444440'};color:${e.completed ? 'var(--green)' : 'var(--red)'};padding:1px 4px;border-radius:3px;font-size:8px;font-weight:700">${e.completed ? 'DONE' : 'MISSING'}</span>
+          </div>
+          <div style="color:var(--fg3);margin-top:1px">
+            ${e.vehicle ? '🚐 ' + e.vehicle : ''}
+            ${e.matchedDriver ? ' · <span style="color:#60a5fa">📍 ' + (e.matchedDriver.route || '') + '</span>' : ' · <span style="color:var(--fg3);font-style:italic">Not in active fleet</span>'}
+          </div>
+        </div>
+      `).join('') || '<div style="color:var(--fg3);font-size:10px;text-align:center">No entries match</div>'}`;
     return;
   }
 
   // ── DEFECTS ──
   if (activeFilter === 'DEFECTS') {
-    el.innerHTML = `<div style="text-align:center;padding:20px">
-      <div style="font-size:24px;margin-bottom:8px">🚫</div>
-      <div style="font-size:12px;color:var(--fg2);margin-bottom:6px">Defect data is received from the Defect Monitor script running on the Fleet Management page.</div>
-      <div style="font-size:10px;color:var(--fg3)">Open the desktop Dispatch Radar to view vehicle defects.</div>
-    </div>`;
+    const defects = (mobileDefects.vehicles || []).filter(v => v.vin !== 'pending' && v.vin !== 'PENDING');
+    if (!defects.length) {
+      const lastSync = mobileDefects.ts ? new Date(mobileDefects.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : 'Never';
+      el.innerHTML = `<div style="text-align:center;padding:20px">
+        <div style="font-size:24px;margin-bottom:8px">🚫</div>
+        <div style="font-size:12px;color:var(--fg2);margin-bottom:4px">No defect data available</div>
+        <div style="font-size:10px;color:var(--fg3)">Last sync: ${lastSync}</div>
+        <div style="font-size:9px;color:var(--fg3);margin-top:6px">Defects sync from the desktop Dispatch Radar every 2 minutes.</div>
+      </div>`;
+      return;
+    }
+    // Match defects to active drivers
+    defects.forEach(v => {
+      v._matchedDriver = null;
+      if (!v.vanNum) return;
+      const normVan = (v.vanNum || '').toUpperCase().replace(/[\s\-\.]/g, '');
+      Object.entries(memory.drivers || {}).forEach(([tid, d]) => {
+        if (v._matchedDriver) return;
+        const dVeh = (d.vehicleId || d.vehicle || '').toUpperCase().replace(/[\s\-\.\(\)\[\]]/g, '');
+        if (dVeh && dVeh === normVan) v._matchedDriver = { name: d.name, route: d.route, state: d.state, tid };
+      });
+    });
+    defects.sort((a, b) => {
+      if (a.grounded && !b.grounded) return -1;
+      if (!a.grounded && b.grounded) return 1;
+      return (b.detectedAt || 0) - (a.detectedAt || 0);
+    });
+    const groundedCount = defects.filter(v => v.grounded).length;
+    const clearedCount = defects.filter(v => !v.grounded).length;
+    const lastSync = mobileDefects.ts ? new Date(mobileDefects.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '?';
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-weight:700;color:var(--red);font-size:12px">🚫 Vehicle Defects (${defects.length})</span>
+        <span style="font-size:9px;color:var(--fg3)">Synced: ${lastSync}</span>
+      </div>
+      <div style="display:flex;gap:4px;margin-bottom:8px">
+        <div style="flex:1;background:#ef444420;border:1px solid #ef444440;border-radius:6px;padding:5px;text-align:center">
+          <div style="font-size:14px;font-weight:700;color:var(--red)">${groundedCount}</div>
+          <div style="font-size:8px;color:var(--fg3)">GROUNDED</div>
+        </div>
+        <div style="flex:1;background:#10b98120;border:1px solid #10b98140;border-radius:6px;padding:5px;text-align:center">
+          <div style="font-size:14px;font-weight:700;color:var(--green)">${clearedCount}</div>
+          <div style="font-size:8px;color:var(--fg3)">CLEARED</div>
+        </div>
+      </div>
+      ${defects.map(v => {
+        const isG = v.grounded;
+        const border = isG ? 'var(--red)' : 'var(--green)';
+        const bg = isG ? '#1a0a0a' : '#0a1a10';
+        const badge = isG
+          ? '<span style="background:#7f1d1d;color:#fca5a5;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700">🔴 GROUNDED</span>'
+          : '<span style="background:#064e3b;color:#6ee7b7;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700">✅ CLEARED</span>';
+        const det = v.detectedAt ? fmt(v.detectedAt) : '';
+        const unG = v.ungroundedAt && !isG ? fmt(v.ungroundedAt) : '';
+        const driverLine = v._matchedDriver
+          ? `<div style="margin-top:3px;padding:2px 5px;background:#1e293b;border-radius:3px;font-size:9px;color:#93c5fd">👤 <b>${v._matchedDriver.name}</b> — ${v._matchedDriver.route} (${v._matchedDriver.state || '?'})</div>`
+          : '';
+        return `<div style="padding:6px 8px;margin-bottom:4px;background:${bg};border-left:3px solid ${border};border-radius:5px;font-size:10px;border:1px solid ${isG?'#374151':'#1f3d2e'}">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+            <span style="color:#fff;font-weight:700;font-size:11px">${v.vanNum || 'Unknown'}${v.type ? ' <span style="color:var(--fg3);font-weight:400">(' + v.type + ')</span>' : ''}</span>
+            ${badge}
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;color:var(--fg3);font-size:9px">
+            ${v.plate ? '<span>🔑 ' + v.plate + '</span>' : ''}
+            ${v.vin ? '<span>🔩 ' + v.vin.slice(-6) + '</span>' : ''}
+            ${det ? '<span>⏱ ' + det + '</span>' : ''}
+            ${unG ? '<span>✅ ' + unG + '</span>' : ''}
+          </div>
+          ${driverLine}
+        </div>`;
+      }).join('')}`;
     return;
   }
 
