@@ -860,6 +860,8 @@ let isRefreshing = false;
 let sortMode = 0;
 const SORT_NAMES = ['Route', 'Stops ↓', 'Pkgs ↓', 'Behind', 'Pace'];
 let inspExpanded = false; // V5.1: 🔒 compact / 🔓 expanded for INSP DONE cards
+let inactiveSubTab = 'current'; // 'current' or 'history'
+let inspectionsList = []; // cached cloud inspections
 let leafletMap = null;
 let mapMarkers = [];
 let debriefMode = 'morning'; // 'morning' or 'nightly'
@@ -1484,6 +1486,7 @@ function getFiltered(filter) {
     case 'COMPLETED': return raw.filter(d => d.state === 'FINISHED' && isActive(d));
     case 'HELPING': return raw.filter(d => d.isHelper);
     case 'GOT_GAS': return raw.filter(d => d.gotGas);
+    case 'EXTRA_PHONE': return raw.filter(d => d.hasExtraPhone);
     default: return raw;
   }
 }
@@ -1502,7 +1505,9 @@ function getCounts() {
     MISSING: raw.filter(d => (d.missing || 0) > 0).length + getRemoved().length,
     COMPLETED: raw.filter(d => d.state === 'FINISHED' && isActive(d)).length,
     HELPING: raw.filter(d => d.isHelper).length,
-    GOT_GAS: raw.filter(d => d.gotGas).length
+    GOT_GAS: raw.filter(d => d.gotGas).length,
+    EXTRA_PHONE: raw.filter(d => d.hasExtraPhone).length,
+    INSPECTIONS: raw.filter(d => d.inspectionDone && !d.isRemoved).length,
   };
 }
 
@@ -1544,10 +1549,15 @@ function renderFilters() {
     { id: 'MISSING', l: '👁 Missing', c: c.MISSING },
     { id: 'COMPLETED', l: '✓ Done', c: c.COMPLETED },
     { id: 'HELPING', l: '🤝 Help', c: c.HELPING },
+    { id: 'BREAK_HISTORY', l: '📊 Breaks', c: '' },
+    ...(c.EXTRA_PHONE > 0 ? [{ id: 'EXTRA_PHONE', l: '📱 Phones', c: c.EXTRA_PHONE }] : []),
+    { id: 'DEFECTS', l: '🚫 Defects', c: '' },
+    { id: 'INSPECTIONS', l: '🛡 Insp', c: c.INSPECTIONS },
+    { id: 'AVI', l: '📋 AVI', c: '' },
     { id: 'GOT_GAS', l: '⛽ Gas', c: c.GOT_GAS },
   ];
   document.getElementById('filterTabs').innerHTML = defs.map(f =>
-    `<button class="fbtn ${activeFilter === f.id ? 'active' : ''}" onclick="setFilter('${f.id}')">${f.l} (${f.c})</button>`
+    `<button class="fbtn ${activeFilter === f.id ? 'active' : ''}" onclick="setFilter('${f.id}')">${f.l}${f.c !== '' ? ' (' + f.c + ')' : ''}</button>`
   ).join('');
 }
 
@@ -1558,6 +1568,123 @@ function setFilter(f) {
 }
 
 function renderDriverList() {
+  const el = document.getElementById('driverList');
+
+  // ═══ CUSTOM TABS (special rendering — not driver cards) ═══
+
+  // ── BREAK HISTORY ──
+  if (activeFilter === 'BREAK_HISTORY') {
+    const raw = getRaw();
+    let noBreaks = [], shortBreaks = [], goodBreaks = [];
+    raw.forEach(d => {
+      if (searchQuery && !(d.name||'').toLowerCase().includes(searchQuery) && !(d.route||'').toLowerCase().includes(searchQuery)) return;
+      if (d.hasNoBreaks) { noBreaks.push(d); }
+      else {
+        let maxMins = 0, details = [];
+        (d.breaks || []).forEach(b => {
+          const dur = b.end ? Math.round((b.end - b.start) / 60000) : Math.round((Date.now() - b.start) / 60000);
+          if (dur > maxMins) maxMins = dur;
+          details.push(`${fmt(b.start)} → ${b.end ? fmt(b.end) : 'Now'} (${dur}m)`);
+        });
+        d._brkStr = details.join(' · ');
+        if (maxMins < 30) shortBreaks.push(d); else goodBreaks.push(d);
+      }
+    });
+    const sec = (title, color, arr) => `
+      <div style="font-weight:700;color:${color};margin:8px 0 4px;font-size:11px">${title} (${arr.length})</div>
+      ${arr.map(d => `<div class="dcard" style="padding:6px 8px;border-left:3px solid ${color}" onclick="openModal('${d.id}')">
+        <div style="color:#fff;font-weight:700;font-size:11px">${abbr(d.name)} <span style="color:var(--fg3);font-weight:400">(${d.route || '?'})</span></div>
+        ${d._brkStr ? `<div style="color:var(--fg2);font-size:9px;margin-top:2px">${d._brkStr}</div>` : ''}
+      </div>`).join('') || '<div style="color:var(--fg3);font-size:10px;font-style:italic">None</div>'}`;
+    el.innerHTML = sec('✅ Breaks Taken (30m+)', '#10b981', goodBreaks) + sec('⚠️ Short Breaks (< 30m)', '#f59e0b', shortBreaks) + sec('❌ No Breaks Taken', '#ef4444', noBreaks);
+    return;
+  }
+
+  // ── INACTIVE (with history sub-tab) ──
+  if (activeFilter === 'INACTIVE') {
+    const raw = getRaw();
+    const act = raw.filter(d => d.state === 'INACTIVE');
+    const subHtml = `<div style="display:flex;gap:4px;margin-bottom:6px">
+      <button class="fbtn ${inactiveSubTab==='current'?'active':''}" onclick="inactiveSubTab='current';renderDriverList()">🔴 Current (${act.length})</button>
+      <button class="fbtn ${inactiveSubTab==='history'?'active':''}" onclick="inactiveSubTab='history';renderDriverList()">⏳ History</button>
+    </div>`;
+    if (inactiveSubTab === 'history') {
+      let inactDrivers = [];
+      raw.forEach(d => {
+        let totalMins = 0;
+        (d.inactivityLog || []).forEach(l => totalMins += (l.duration || 0));
+        if (d.state === 'INACTIVE' && d.currentInactiveStart) totalMins += Math.floor((Date.now() - d.currentInactiveStart) / 60000);
+        if (totalMins > 0) inactDrivers.push({ ...d, _totalInact: totalMins });
+      });
+      inactDrivers.sort((a, b) => b._totalInact - a._totalInact);
+      el.innerHTML = subHtml + `<div style="font-weight:700;color:var(--amber);font-size:11px;margin-bottom:6px">⏳ Inactivity History (${inactDrivers.length})</div>` +
+        (inactDrivers.map(d => `<div class="dcard" style="padding:6px 8px;border-left:3px solid var(--amber)" onclick="openModal('${d.id}')">
+          <div style="display:flex;justify-content:space-between;margin-bottom:2px">
+            <span style="color:#fff;font-weight:700;font-size:11px">${abbr(d.name)} <span style="color:var(--fg3);font-weight:400">(${d.route || '?'})</span></span>
+            <span style="color:var(--amber);font-weight:700;font-size:10px">${d._totalInact}m total</span>
+          </div>
+          ${(d.inactivityLog||[]).map(l => `<div style="color:var(--fg2);font-size:9px">• ${fmt(l.start)} — ${l.duration}m</div>`).join('')}
+          ${d.state==='INACTIVE'&&d.currentInactiveStart?`<div style="color:var(--red);font-size:9px;font-weight:700">• NOW: ${fmt(d.currentInactiveStart)} — ${Math.floor((Date.now()-d.currentInactiveStart)/60000)}m</div>`:''}
+        </div>`).join('') || '<div style="color:var(--fg3);font-size:10px;font-style:italic">No inactivity recorded</div>');
+      return;
+    }
+    // Current sub-tab: fall through to normal card rendering but prepend sub-tab header
+    el.innerHTML = subHtml;
+    const cards = act.filter(d => !searchQuery || (d.name||'').toLowerCase().includes(searchQuery) || (d.route||'').toLowerCase().includes(searchQuery))
+      .map(d => buildCard(d)).join('') || '<div class="empty"><p>No idle drivers</p></div>';
+    el.innerHTML = subHtml + cards;
+    return;
+  }
+
+  // ── INSPECTIONS ──
+  if (activeFilter === 'INSPECTIONS') {
+    const raw = getRaw();
+    const inspDone = raw.filter(d => d.inspectionDone && !d.isRemoved)
+      .sort((a, b) => (b.inspectionDoneTime || 0) - (a.inspectionDoneTime || 0));
+    const inspPending = raw.filter(d => !d.inspectionDone && !d.isRemoved && d.state !== 'FINISHED')
+      .sort((a, b) => (a.route || '').localeCompare(b.route || ''));
+    el.innerHTML = `
+      <div style="font-weight:700;color:#22c55e;font-size:11px;margin:4px 0">✅ Post-Inspection Done (${inspDone.length})</div>
+      ${inspDone.map(d => `<div class="dcard" style="padding:5px 8px;border-left:3px solid #22c55e;background:linear-gradient(145deg,#0d3d22,#072918)" onclick="openModal('${d.id}')">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="color:#fff;font-weight:700;font-size:11px">${d.route||'?'} ${abbr(d.name)}</span>
+          <span style="color:var(--fg3);font-size:9px">${d.inspectionDoneTime ? fmt(d.inspectionDoneTime) : ''}</span>
+        </div>
+        <div style="color:#d1d5db;font-size:9px;margin-top:1px">${d.vehicleId || ''} · ${d.stopsCompleted||0} stops</div>
+      </div>`).join('') || '<div style="color:var(--fg3);font-size:10px;font-style:italic">None yet</div>'}
+      <div style="font-weight:700;color:var(--amber);font-size:11px;margin:10px 0 4px">⏳ Pending (${inspPending.length})</div>
+      ${inspPending.map(d => `<div class="dcard" style="padding:5px 8px;border-left:3px solid var(--amber)" onclick="openModal('${d.id}')">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="color:#fff;font-weight:700;font-size:11px">${d.route||'?'} ${abbr(d.name)}</span>
+          <span style="color:var(--fg3);font-size:9px">${d.state || ''}</span>
+        </div>
+        <div style="color:#d1d5db;font-size:9px;margin-top:1px">${d.vehicleId || ''} · Rem: ${rem(d)} stops</div>
+      </div>`).join('') || '<div style="color:var(--fg3);font-size:10px;font-style:italic">All complete!</div>'}`;
+    return;
+  }
+
+  // ── AVI ──
+  if (activeFilter === 'AVI') {
+    el.innerHTML = `<div style="text-align:center;padding:20px">
+      <div style="font-size:24px;margin-bottom:8px">📋</div>
+      <div style="font-size:12px;color:var(--fg2);margin-bottom:6px">AVI data is scraped from the Fleet Management page and is only available on desktop.</div>
+      <div style="font-size:10px;color:var(--fg3)">Open the desktop Dispatch Radar to view AVI completions.</div>
+    </div>`;
+    return;
+  }
+
+  // ── DEFECTS ──
+  if (activeFilter === 'DEFECTS') {
+    el.innerHTML = `<div style="text-align:center;padding:20px">
+      <div style="font-size:24px;margin-bottom:8px">🚫</div>
+      <div style="font-size:12px;color:var(--fg2);margin-bottom:6px">Defect data is received from the Defect Monitor script running on the Fleet Management page.</div>
+      <div style="font-size:10px;color:var(--fg3)">Open the desktop Dispatch Radar to view vehicle defects.</div>
+    </div>`;
+    return;
+  }
+
+  // ═══ STANDARD DRIVER-CARD TABS ═══
+
   let drivers = getFiltered(activeFilter);
 
   // Search
@@ -1600,7 +1727,6 @@ function renderDriverList() {
     }
   });
 
-  const el = document.getElementById('driverList');
   if (!drivers.length) {
     el.innerHTML = `<div class="empty"><p>${searchQuery ? 'No match for "' + searchQuery + '"' : 'No drivers in this filter'}</p></div>`;
     return;
