@@ -1147,12 +1147,15 @@ async function fetchData() {
       // V5.0: Re-apply any pending mobile commands that desktop hasn't adopted yet
       reapplyPendingCommands();
       lastFetch = Date.now();
-      // V5.0: Detect data freshness from desktop's timestamps
-      // _cloudPushTs = exact moment desktop pushed to cloud (most accurate)
-      // lastUpdated = when desktop called saveMemory() (may be more recent than last push)
-      const pushTs = memory._cloudPushTs || memory.lastUpdated || null;
-      const dataAge = pushTs ? Date.now() - pushTs : null;
-      const isStale = dataAge && dataAge > 120000; // >2 minutes = stale
+      // V5.2: Smart freshness — use the most recent reliable timestamp
+      // _cloudPushTs = when pushMemoryToCloud() ran (best, but stale if tab throttled)
+      // _fileModified = when Drive file was written (from GAS, always accurate)
+      // lastUpdated = when saveMemory() ran (stale if tab throttled)
+      const pushTs = memory._cloudPushTs || null;
+      const fileTs = memory._fileModified || null;
+      const bestTs = Math.max(pushTs || 0, fileTs || 0, memory.lastUpdated || 0);
+      const dataAge = bestTs ? Date.now() - bestTs : null;
+      const isStale = dataAge && dataAge > 180000; // >3 minutes = stale
       setSyncStatus(isStale ? 'stale' : 'live', dataAge);
       render();
     } else {
@@ -3092,9 +3095,11 @@ setInterval(() => {
     const ago = Math.round((Date.now() - lastFetch) / 1000);
     const label = document.getElementById('syncLabel');
     if (!label) return;
-    // V5.0: Show both fetch age AND data age
-    const pushTs = memory._cloudPushTs || memory.lastUpdated || null;
-    const dataAge = pushTs ? Date.now() - pushTs : null;
+    // V5.2: Smart freshness — use best available timestamp
+    const pushTs = memory._cloudPushTs || null;
+    const fileTs = memory._fileModified || null;
+    const bestTs = Math.max(pushTs || 0, fileTs || 0, memory.lastUpdated || 0);
+    const dataAge = bestTs ? Date.now() - bestTs : null;
     const isStale = dataAge && dataAge > 120000;
     const dataAgeStr = dataAge ? formatDataAge(dataAge) : '';
     if (isStale) {
