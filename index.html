@@ -700,6 +700,7 @@ html, body {
           <div class="title"><span class="dot"></span> Dispatch Radar <span id="stationBadge" class="hdr-station" onclick="openStationPicker()">DJE5</span></div>
           <div class="station-line">
             <span class="sig">By: Andrismar T.</span>
+            <span style="color:var(--fg3);font-size:8px;margin-left:4px" id="mobileVersion">V5.2</span>
           </div>
         </div>
         <div class="hdr-controls">
@@ -839,6 +840,7 @@ html, body {
 // ═══════════════════════════════════════════════════════════
 
 // ── Configuration ──
+const MOBILE_VERSION = '5.2';
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyh90Qa9FuE_tHyZ9T-rQyOOtwFeZxVt-4iUB_LOtyoupoBU8xp-xPUKCXF1EJrjzPCPQ/exec';
 const STATIONS = ['DJE5', 'DJZ6', 'DYY6', 'DNJ4'];
 const REFRESH_MS = 20000; // V5.1: was 30s, reduced for fresher data
@@ -1125,14 +1127,19 @@ async function fetchData() {
   setSyncStatus('syncing');
 
   try {
-    // V5.2: Use POST ?action=pull to bypass Google Apps Script CDN caching.
-    // GAS aggressively caches GET responses server-side regardless of cache headers
-    // or URL uniqueness. POST requests are never cached by any CDN.
-    const resp = await fetch(cloudUrl + '?action=pull&station=' + currentStation, {
-      method: 'POST', mode: 'cors', cache: 'no-store',
-      headers: { 'Content-Type': 'text/plain' },
-      body: '{}'
-    });
+    // V5.2: Try POST first (not cached by CDN), fallback to GET
+    let resp;
+    try {
+      resp = await fetch(cloudUrl + '?action=pull&station=' + currentStation, {
+        method: 'POST', mode: 'cors', cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: '{}'
+      });
+    } catch(e1) {
+      resp = await fetch(cloudUrl + '?station=' + currentStation + '&_t=' + Date.now(), {
+        method: 'GET', mode: 'cors', cache: 'no-store'
+      });
+    }
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     if (data && data.drivers) {
@@ -1234,14 +1241,126 @@ async function fetchAvi() {
   } catch(e) { console.log('[Radar] AVI fetch error:', e.message); }
 }
 
-function forceRefresh() {
+async function forceRefresh() {
   const btn = document.getElementById('refreshBtn');
   btn.style.transform = 'rotate(360deg)';
   btn.style.transition = 'transform .5s';
   setTimeout(() => { btn.style.transform = ''; btn.style.transition = ''; }, 600);
-  fetchData();
+
+  // V5.2: Diagnostic refresh — fetch raw and show what came back
+  setSyncStatus('syncing');
+  const fetchStart = Date.now();
+  try {
+    // Try POST first (bypasses CDN if GAS v3.2 deployed)
+    let resp;
+    let method = 'POST';
+    try {
+      resp = await fetch(cloudUrl + '?action=pull&station=' + currentStation, {
+        method: 'POST', mode: 'cors', cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: '{}'
+      });
+    } catch(e1) {
+      // Fallback to GET if POST fails
+      method = 'GET(fallback)';
+      resp = await fetch(cloudUrl + '?station=' + currentStation + '&_t=' + Date.now(), {
+        method: 'GET', mode: 'cors', cache: 'no-store'
+      });
+    }
+    const fetchMs = Date.now() - fetchStart;
+    const text = await resp.text();
+    const size = text.length;
+    let data;
+    try { data = JSON.parse(text); } catch(e) { showDiagToast(`Parse error (${size} bytes): ${e.message}`, true); return; }
+
+    // Extract diagnostic timestamps
+    const now = Date.now();
+    const servedAt = data._servedAt || null;
+    const fileModified = data._fileModified || null;
+    const pushTs = data._cloudPushTs || null;
+    const lastUpd = data.lastUpdated || null;
+    const gasVer = data._gasVersion || 'unknown';
+    const driverCount = data.drivers ? Object.keys(data.drivers).length : 0;
+    const station = data.station || '?';
+
+    const ageStr = (ts) => {
+      if (!ts) return 'N/A';
+      const s = Math.floor((now - ts) / 1000);
+      if (s < 60) return s + 's ago';
+      const m = Math.floor(s / 60);
+      if (m < 60) return m + 'm ' + (s % 60) + 's ago';
+      return Math.floor(m / 60) + 'h ' + (m % 60) + 'm ago';
+    };
+
+    // Apply data
+    if (data.drivers) {
+      memory = data;
+      reapplyPendingCommands();
+      lastFetch = Date.now();
+      const dataAge = pushTs ? now - pushTs : (lastUpd ? now - lastUpd : null);
+      const isStale = dataAge && dataAge > 120000;
+      setSyncStatus(isStale ? 'stale' : 'live', dataAge);
+      render();
+    }
+
+    // Show diagnostic
+    const lines = [
+      `📡 Method: ${method} · ${fetchMs}ms · ${(size/1024).toFixed(1)}KB`,
+      `🏢 Station: ${station} · ${driverCount} drivers`,
+      `⚙️ GAS: v${gasVer}`,
+      `📤 Desktop pushed: ${ageStr(pushTs)}`,
+      `💾 Desktop saved: ${ageStr(lastUpd)}`,
+      `📁 Drive file modified: ${ageStr(fileModified)}`,
+      `🖥 GAS served: ${ageStr(servedAt)}`,
+    ];
+
+    // Determine the problem
+    if (!servedAt) {
+      lines.push('', '⚠️ GAS v3.2 NOT deployed — no _servedAt in response');
+    } else if (servedAt && fileModified && (now - servedAt) < 10000 && (now - fileModified) > 300000) {
+      lines.push('', '❌ Desktop is NOT pushing — Drive file is old but GAS served fresh');
+    } else if (servedAt && (now - servedAt) > 60000) {
+      lines.push('', '⚠️ GAS response is cached — served ' + ageStr(servedAt));
+    } else if (pushTs && (now - pushTs) < 120000) {
+      lines.push('', '✅ Data is fresh!');
+    }
+
+    showDiagModal(lines);
+
+  } catch (e) {
+    showDiagToast('Fetch failed: ' + e.message, true);
+  }
+
   fetchDefects();
   fetchAvi();
+}
+
+function showDiagModal(lines) {
+  const html = lines.map(l => {
+    if (l === '') return '<div style="height:6px"></div>';
+    if (l.startsWith('✅')) return `<div style="color:#22c55e;font-weight:700;font-size:12px">${l}</div>`;
+    if (l.startsWith('❌')) return `<div style="color:#ef4444;font-weight:700;font-size:12px">${l}</div>`;
+    if (l.startsWith('⚠️')) return `<div style="color:#f59e0b;font-weight:700;font-size:12px">${l}</div>`;
+    return `<div style="color:var(--fg2);font-size:11px">${l}</div>`;
+  }).join('');
+
+  document.getElementById('modalContent').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:14px;font-weight:800;color:var(--green)">🔍 Sync Diagnostic</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="background:var(--bg2);border:1px solid var(--bg3);border-radius:8px;padding:10px;font-family:monospace;line-height:1.8">
+      ${html}
+    </div>
+    <div style="margin-top:10px;font-size:9px;color:var(--fg3);text-align:center">
+      Dispatch Radar Mobile V${MOBILE_VERSION}
+    </div>
+  `;
+  document.getElementById('driverModal').classList.add('open');
+}
+
+function showDiagToast(msg, isError) {
+  showToast(msg, isError);
 }
 
 // V5.1: Toggle INSP DONE cards between compact (🔒) and expanded (🔓) mode
@@ -2927,7 +3046,7 @@ function openSettings() {
       <button class="hdr-btn" style="width:100%;padding:10px;color:var(--red);border-color:var(--red)" onclick="if(confirm('Clear all local data and reset?')){localStorage.clear();sessionStorage.clear();location.reload()}">Reset Everything</button>
     </div>
     <div style="text-align:center;color:var(--fg3);font-size:10px;margin-top:20px">
-      <div>Dispatch Radar V5.0</div>
+      <div>Dispatch Radar V${MOBILE_VERSION}</div>
       <div style="font-style:italic">By: Andrismar T.</div>
     </div>
   `;
