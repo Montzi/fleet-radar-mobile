@@ -1135,8 +1135,11 @@ async function fetchData() {
       // V5.0: Re-apply any pending mobile commands that desktop hasn't adopted yet
       reapplyPendingCommands();
       lastFetch = Date.now();
-      // V5.0: Detect data freshness from desktop's lastUpdated timestamp
-      const dataAge = memory.lastUpdated ? Date.now() - memory.lastUpdated : null;
+      // V5.0: Detect data freshness from desktop's timestamps
+      // _cloudPushTs = exact moment desktop pushed to cloud (most accurate)
+      // lastUpdated = when desktop called saveMemory() (may be more recent than last push)
+      const pushTs = memory._cloudPushTs || memory.lastUpdated || null;
+      const dataAge = pushTs ? Date.now() - pushTs : null;
       const isStale = dataAge && dataAge > 120000; // >2 minutes = stale
       setSyncStatus(isStale ? 'stale' : 'live', dataAge);
       render();
@@ -2966,7 +2969,8 @@ setInterval(() => {
     const label = document.getElementById('syncLabel');
     if (!label) return;
     // V5.0: Show both fetch age AND data age
-    const dataAge = memory.lastUpdated ? Date.now() - memory.lastUpdated : null;
+    const pushTs = memory._cloudPushTs || memory.lastUpdated || null;
+    const dataAge = pushTs ? Date.now() - pushTs : null;
     const isStale = dataAge && dataAge > 120000;
     const dataAgeStr = dataAge ? formatDataAge(dataAge) : '';
     if (isStale) {
