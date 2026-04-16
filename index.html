@@ -1125,8 +1125,13 @@ async function fetchData() {
   setSyncStatus('syncing');
 
   try {
-    const resp = await fetch(_cb(cloudUrl + '?station=' + currentStation), {
-      method: 'GET', mode: 'cors', cache: 'no-store'
+    // V5.2: Use POST ?action=pull to bypass Google Apps Script CDN caching.
+    // GAS aggressively caches GET responses server-side regardless of cache headers
+    // or URL uniqueness. POST requests are never cached by any CDN.
+    const resp = await fetch(cloudUrl + '?action=pull&station=' + currentStation, {
+      method: 'POST', mode: 'cors', cache: 'no-store',
+      headers: { 'Content-Type': 'text/plain' },
+      body: '{}'
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
