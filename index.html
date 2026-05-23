@@ -5,25 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Dispatch Radar">
+<meta name="apple-mobile-web-app-title" content="Mobile Amazon Radar">
 <meta name="theme-color" content="#111827">
 <meta name="mobile-web-app-capable" content="yes">
-<title>Dispatch Radar</title>
+<title>Mobile Amazon Radar</title>
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%23111827'/%3E%3Ccircle cx='90' cy='85' r='50' fill='none' stroke='%2310b981' stroke-width='5'/%3E%3Ccircle cx='90' cy='85' r='6' fill='%2310b981'/%3E%3Cline x1='90' y1='85' x2='90' y2='50' stroke='%2310b981' stroke-width='4' stroke-linecap='round'/%3E%3Ctext x='90' y='155' text-anchor='middle' fill='%2310b981' font-size='18' font-weight='bold' font-family='system-ui'%3ERADAR%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 /* ═══════════════════════════════════════════════
-   DISPATCH RADAR MOBILE — V5.0
+   MOBILE AMAZON RADAR — V4.1
    By: Andrismar T.
    Desktop-parity mobile companion
-   V5.0 Fixes:
-   - Renamed to "Dispatch Radar" throughout
-   - Command persistence: mobile changes survive cloud refreshes
-   - Morning debrief: shows parsed summary + edit suggestions
-   - Nightly debrief: full edit parity with desktop
-   - Filter tabs: wrap layout (no horizontal scroll)
-   - Map: uses lastKnownLat/lastKnownLon for driver locations
-   - iOS safe area: header/modal no longer overlap system clock
+   Near-live data via POST-based CDN bypass
    ═══════════════════════════════════════════════ */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -51,6 +44,7 @@ html, body {
 #app {
   display: flex; flex-direction: column;
   height: 100%; overflow: hidden;
+  padding-top: var(--safe-top);
   padding-bottom: var(--safe-bot);
 }
 
@@ -61,7 +55,6 @@ html, body {
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
   gap: 16px; padding: 30px;
-  padding-top: calc(30px + var(--safe-top));
 }
 
 .pin-screen h2 { font-size: 22px; color: var(--green); font-weight: 800; }
@@ -111,7 +104,6 @@ html, body {
 .hdr {
   background: var(--bg);
   padding: 6px 12px 4px;
-  padding-top: calc(6px + var(--safe-top));
   border-bottom: 1px solid var(--bg3);
   flex-shrink: 0; z-index: 10;
 }
@@ -265,11 +257,14 @@ html, body {
 /* ── Filter tabs ── */
 .filters {
   padding: 0 12px 4px;
-  flex-shrink: 0;
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+  flex-shrink: 0; scrollbar-width: none;
 }
 
+.filters::-webkit-scrollbar { display: none; }
+
 .filters-row {
-  display: flex; flex-wrap: wrap; gap: 4px;
+  display: flex; gap: 4px; min-width: max-content;
 }
 
 .fbtn {
@@ -278,7 +273,7 @@ html, body {
   padding: 4px 7px; border-radius: 6px;
   font-size: 10px; cursor: pointer;
   white-space: nowrap; font-weight: 600;
-  transition: all .15s;
+  transition: all .15s; flex-shrink: 0;
   user-select: none;
 }
 
@@ -408,7 +403,6 @@ html, body {
   width: 100%; max-width: 500px; max-height: 92vh;
   overflow-y: auto; -webkit-overflow-scrolling: touch;
   padding: 14px 12px calc(14px + var(--safe-bot));
-  padding-top: calc(14px + var(--safe-top));
   animation: slideUp .25s ease;
 }
 
@@ -575,7 +569,6 @@ html, body {
   background: rgba(0,0,0,.8);
   z-index: 200; display: none;
   align-items: center; justify-content: center;
-  padding-top: var(--safe-top);
 }
 
 .station-picker.open { display: flex; }
@@ -671,7 +664,7 @@ html, body {
 
   <!-- ═══ PIN Lock Screen ═══ -->
   <div id="pinScreen" class="pin-screen" style="display:none">
-    <h2>🔒 Dispatch Radar</h2>
+    <h2>🔒 Mobile Amazon Radar</h2>
     <p>Enter your access PIN to continue.</p>
     <input id="pinInput" class="pin-input" type="password" maxlength="6" inputmode="numeric" pattern="[0-9]*" placeholder="••••">
     <button class="pin-submit" onclick="verifyPin()">Unlock</button>
@@ -681,7 +674,7 @@ html, body {
 
   <!-- ═══ Setup Screen ═══ -->
   <div id="setup" class="setup-screen" style="display:none">
-    <h2>Dispatch Radar</h2>
+    <h2>Mobile Amazon Radar</h2>
     <p style="font-size:12px;color:var(--fg2)">Enter Cloud Sync URL to connect.</p>
     <input id="setup-url" class="setup-input" placeholder="https://script.google.com/macros/s/.../exec">
     <p style="font-size:11px;color:var(--fg2);margin-top:8px">Set Access PIN (4-6 digits):</p>
@@ -697,14 +690,12 @@ html, body {
     <div class="hdr">
       <div class="hdr-top">
         <div class="hdr-brand">
-          <div class="title"><span class="dot"></span> Dispatch Radar <span id="stationBadge" class="hdr-station" onclick="openStationPicker()">DJE5</span></div>
+          <div class="title"><span class="dot"></span> Mobile Amazon Radar <span id="stationBadge" class="hdr-station" onclick="openStationPicker()">DJE5</span></div>
           <div class="station-line">
             <span class="sig">By: Andrismar T.</span>
-            <span style="color:var(--fg3);font-size:8px;margin-left:4px" id="mobileVersion">V5.2</span>
           </div>
         </div>
         <div class="hdr-controls">
-          <button class="hdr-btn" onclick="toggleInspCompact()" id="inspToggleBtn" title="Toggle INSP DONE compact/expanded">🔒</button>
           <button class="hdr-btn" onclick="forceRefresh()" id="refreshBtn" title="Refresh">↻</button>
           <button class="hdr-btn" onclick="openSettings()" title="Settings">⚙</button>
         </div>
@@ -834,16 +825,15 @@ html, body {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 // ═══════════════════════════════════════════════════════════
-//  DISPATCH RADAR MOBILE — V5.0
+//  MOBILE AMAZON RADAR — V4.0
 //  By: Andrismar T.
 //  Desktop-parity mobile companion with PIN security
 // ═══════════════════════════════════════════════════════════
 
 // ── Configuration ──
-const MOBILE_VERSION = '5.2';
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyh90Qa9FuE_tHyZ9T-rQyOOtwFeZxVt-4iUB_LOtyoupoBU8xp-xPUKCXF1EJrjzPCPQ/exec';
 const STATIONS = ['DJE5', 'DJZ6', 'DYY6', 'DNJ4'];
-const REFRESH_MS = 20000; // V5.1: was 30s, reduced for fresher data
+const REFRESH_MS = 30000;
 const LS_URL = 'dispatch_radar_url';
 const LS_STA = 'dispatch_radar_station';
 const LS_PIN = 'dispatch_radar_pin';
@@ -861,128 +851,10 @@ let searchQuery = '';
 let isRefreshing = false;
 let sortMode = 0;
 const SORT_NAMES = ['Route', 'Stops ↓', 'Pkgs ↓', 'Behind', 'Pace'];
-let inspExpanded = false; // V5.1: 🔒 compact / 🔓 expanded for INSP DONE cards
-let inactiveSubTab = 'current'; // 'current' or 'history'
-let inspectionsList = []; // cached cloud inspections
-let mobileDefects = { vehicles: [], ts: 0, shiftDate: '' }; // V5.1: from cloud
-let mobileAvi = { data: [], ts: 0, shiftDate: '' }; // V5.1: from cloud
 let leafletMap = null;
 let mapMarkers = [];
 let debriefMode = 'morning'; // 'morning' or 'nightly'
 let nightlyReportData = null;
-
-// ── V5.0: LOCAL COMMAND PERSISTENCE ──
-// Commands sent from mobile are stored locally and re-applied after each
-// cloud fetch until the desktop script adopts them (reflected in cloud data).
-const LS_PENDING_CMDS = 'dispatch_radar_pending_cmds';
-let pendingCommands = []; // [{type, tid, value, extra, ts, field, expected}]
-
-function loadPendingCommands() {
-  try {
-    const raw = localStorage.getItem(LS_PENDING_CMDS);
-    pendingCommands = raw ? JSON.parse(raw) : [];
-    // Expire commands older than 10 minutes — desktop should have processed by then
-    const cutoff = Date.now() - 600000;
-    pendingCommands = pendingCommands.filter(c => c.ts > cutoff);
-    savePendingCommands();
-  } catch(e) { pendingCommands = []; }
-}
-
-function savePendingCommands() {
-  try { localStorage.setItem(LS_PENDING_CMDS, JSON.stringify(pendingCommands)); } catch(e) {}
-}
-
-function addPendingCommand(type, tid, value, extra) {
-  // Remove any existing command of the same type+tid (latest wins)
-  pendingCommands = pendingCommands.filter(c => !(c.type === type && c.tid === tid));
-  pendingCommands.push({ type, tid, value, extra: extra || null, ts: Date.now() });
-  savePendingCommands();
-}
-
-function reapplyPendingCommands() {
-  // After cloud data overwrites memory, re-apply local commands
-  // that the desktop hasn't adopted yet
-  if (!memory.drivers || pendingCommands.length === 0) return;
-
-  let changed = false;
-  const stillPending = [];
-
-  pendingCommands.forEach(cmd => {
-    const d = memory.drivers[cmd.tid];
-    if (!d) { stillPending.push(cmd); return; } // driver not in memory yet, keep
-
-    // Check if the desktop already reflects this change
-    let adopted = false;
-    switch (cmd.type) {
-      case 'pin':
-        adopted = d.isPinned === !!cmd.value && d.isPinnedManually === !!cmd.value;
-        if (!adopted) { d.isPinned = !!cmd.value; d.isPinnedManually = !!cmd.value; changed = true; }
-        break;
-      case 'sweeper':
-        adopted = d.isSweeper === !!cmd.value;
-        if (!adopted) {
-          d.isSweeper = !!cmd.value;
-          if (cmd.value) { d.isPinned = true; d.sweeperManuallySet = true; d.isHelper = false; d.isFlexRoute = false; }
-          changed = true;
-        }
-        break;
-      case 'helper':
-        adopted = d.isHelper === !!cmd.value;
-        if (!adopted) {
-          d.isHelper = !!cmd.value;
-          if (cmd.value) { d.helperManuallySet = true; d.isSweeper = false; d.isFlexRoute = false; }
-          changed = true;
-        }
-        break;
-      case 'flex':
-        adopted = d.isFlexRoute === !!cmd.value;
-        if (!adopted) {
-          d.isFlexRoute = !!cmd.value;
-          if (cmd.value) { d.flexRouteManuallySet = true; d.isSweeper = false; d.isHelper = false; }
-          changed = true;
-        }
-        break;
-      case 'delivered':
-        adopted = d.manuallyDelivered === !!cmd.value;
-        if (!adopted) { d.manuallyDelivered = !!cmd.value; changed = true; }
-        break;
-      case 'inspectionDone':
-        adopted = d.inspectionDone === !!cmd.value;
-        if (!adopted) {
-          d.inspectionDone = !!cmd.value;
-          if (cmd.value) { d.inspectionDoneTime = cmd.ts; d.inspectionManual = true; }
-          changed = true;
-        }
-        break;
-      case 'manualBreak':
-        adopted = d._manualBreak === true && !d.hasNoBreaks;
-        if (!adopted) { d._manualBreak = true; d.hasNoBreaks = false; changed = true; }
-        break;
-      case 'extraPhone':
-        // Extra phone commands are additive — just re-apply the delta
-        if (cmd.extra && cmd.extra.delta) {
-          d.extraPhoneManualDelta = (d.extraPhoneManualDelta || 0) + (cmd.extra.delta || 0);
-          d.extraPhoneCount = Math.max(0, (d._debriefPhoneCount || 0) + (d.extraPhoneManualDelta || 0));
-          d.hasExtraPhone = d.extraPhoneCount > 0;
-          changed = true;
-        }
-        adopted = true; // One-shot, don't keep re-applying deltas
-        break;
-      case 'remove':
-        adopted = d.isRemoved === !!cmd.value;
-        if (!adopted) { d.isRemoved = !!cmd.value; changed = true; }
-        break;
-      default:
-        adopted = true; // Unknown, discard
-    }
-
-    if (!adopted) stillPending.push(cmd);
-  });
-
-  pendingCommands = stillPending;
-  savePendingCommands();
-  if (changed) console.log('[Radar] 📌 Re-applied ' + (pendingCommands.length) + ' pending command(s)');
-}
 
 // ═══════════════════════
 //  PIN SECURITY
@@ -1055,17 +927,11 @@ function boot() {
   m.style.minHeight = '0';
   document.getElementById('stationBadge').textContent = currentStation;
   loadNotifyPrefs();
-  loadPendingCommands();
   fetchData();
   fetchDriverInfo();
-  fetchDefects();
-  fetchAvi();
   refreshTimer = setInterval(fetchData, REFRESH_MS);
   // Refresh driver info every 5 minutes
   setInterval(fetchDriverInfo, 300000);
-  // Refresh defects and AVI every 60 seconds
-  setInterval(fetchDefects, 60000);
-  setInterval(fetchAvi, 60000);
 }
 
 function saveSetup() {
@@ -1117,46 +983,31 @@ function saveNotifyPrefs() {
 //  DATA FETCHING
 // ═══════════════════════
 
-// V5.1: Cache-buster — Google Apps Script CDN caches GET responses
-// aggressively. Adding a unique _t param forces a fresh read each time.
-function _cb(url) { return url + '&_t=' + Date.now(); }
-
 async function fetchData() {
   if (isRefreshing) return;
   isRefreshing = true;
   setSyncStatus('syncing');
 
   try {
-    // V5.2: Try POST first (not cached by CDN), fallback to GET
-    let resp;
-    try {
-      resp = await fetch(cloudUrl + '?action=pull&station=' + currentStation, {
-        method: 'POST', mode: 'cors', cache: 'no-store',
-        headers: { 'Content-Type': 'text/plain' },
-        body: '{}'
-      });
-    } catch(e1) {
-      resp = await fetch(cloudUrl + '?station=' + currentStation + '&_t=' + Date.now(), {
-        method: 'GET', mode: 'cors', cache: 'no-store'
-      });
-    }
+    // V3.2: Use POST ?action=pull to bypass GAS CDN caching
+    // GET responses are CDN-cached by Google for up to 30 minutes;
+    // POST responses are NEVER cached, giving near-live data freshness.
+    const resp = await fetch(cloudUrl + '?action=pull&station=' + currentStation, {
+      method: 'POST', mode: 'cors', cache: 'no-cache',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ station: currentStation })
+    });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     if (data && data.drivers) {
       memory = data;
-      // V5.0: Re-apply any pending mobile commands that desktop hasn't adopted yet
-      reapplyPendingCommands();
       lastFetch = Date.now();
-      // V5.2: Smart freshness — use the most recent reliable timestamp
-      // _cloudPushTs = when pushMemoryToCloud() ran (best, but stale if tab throttled)
-      // _fileModified = when Drive file was written (from GAS, always accurate)
-      // lastUpdated = when saveMemory() ran (stale if tab throttled)
-      const pushTs = memory._cloudPushTs || null;
-      const fileTs = memory._fileModified || null;
-      const bestTs = Math.max(pushTs || 0, fileTs || 0, memory.lastUpdated || 0);
-      const dataAge = bestTs ? Date.now() - bestTs : null;
-      const isStale = dataAge && dataAge > 180000; // >3 minutes = stale
-      setSyncStatus(isStale ? 'stale' : 'live', dataAge);
+      // V3.2: Log diagnostic metadata for freshness tracing
+      if (data._servedAt && data._fileModified) {
+        const serveLag = data._servedAt - data._fileModified;
+        console.log(`[Radar] ✅ Fresh pull via POST | GAS ${data._gasVersion || '?'} | serve lag: ${(serveLag/1000).toFixed(1)}s | file age: ${((Date.now() - data._fileModified)/1000).toFixed(0)}s`);
+      }
+      setSyncStatus('live');
       render();
     } else {
       setSyncStatus('empty');
@@ -1173,7 +1024,7 @@ async function fetchData() {
 // ── Driver Info (personal phone, email, flex) from cloud ──
 async function fetchDriverInfo() {
   try {
-    const resp = await fetch(_cb(cloudUrl + '?action=driverInfo&station=' + currentStation), { mode: 'cors', cache: 'no-store' });
+    const resp = await fetch(cloudUrl + '?action=driverInfo&station=' + currentStation, { mode: 'cors', cache: 'no-cache' });
     const data = await resp.json();
     if (data && data.drivers) {
       driverInfoMap = data.drivers;
@@ -1204,180 +1055,26 @@ function getBestDriverInfo(name) {
   return null;
 }
 
-// V5.1: Get today's shift date (accounts for post-midnight = yesterday's shift)
-function getShiftDateStr() {
-  const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  if (et.getHours() < 2) et.setDate(et.getDate() - 1);
-  return et.toISOString().slice(0, 10);
-}
-
-// V5.1: Fetch defects from cloud
-async function fetchDefects() {
-  try {
-    const resp = await fetch(_cb(cloudUrl + '?action=defectsSync&station=' + currentStation), { mode: 'cors', cache: 'no-store' });
-    const data = await resp.json();
-    if (data && Array.isArray(data.vehicles)) {
-      // Only use data from today's shift (reset at 2AM)
-      if (data.shiftDate && data.shiftDate !== getShiftDateStr()) {
-        mobileDefects = { vehicles: [], ts: 0, shiftDate: '' };
-      } else {
-        mobileDefects = data;
-      }
-      console.log('[Radar] Defects loaded:', mobileDefects.vehicles.length, 'vehicles');
-    }
-  } catch(e) { console.log('[Radar] Defects fetch error:', e.message); }
-}
-
-// V5.1: Fetch AVI from cloud
-async function fetchAvi() {
-  try {
-    const resp = await fetch(_cb(cloudUrl + '?action=aviSync&station=' + currentStation), { mode: 'cors', cache: 'no-store' });
-    const data = await resp.json();
-    if (data && Array.isArray(data.data)) {
-      if (data.shiftDate && data.shiftDate !== getShiftDateStr()) {
-        mobileAvi = { data: [], ts: 0, shiftDate: '' };
-      } else {
-        mobileAvi = data;
-      }
-      console.log('[Radar] AVI loaded:', mobileAvi.data.length, 'entries');
-    }
-  } catch(e) { console.log('[Radar] AVI fetch error:', e.message); }
-}
-
-async function forceRefresh() {
+function forceRefresh() {
   const btn = document.getElementById('refreshBtn');
   btn.style.transform = 'rotate(360deg)';
   btn.style.transition = 'transform .5s';
   setTimeout(() => { btn.style.transform = ''; btn.style.transition = ''; }, 600);
-
-  // V5.2: Diagnostic refresh — fetch raw and show what came back
-  setSyncStatus('syncing');
-  const fetchStart = Date.now();
-  try {
-    // Try POST first (bypasses CDN if GAS v3.2 deployed)
-    let resp;
-    let method = 'POST';
-    try {
-      resp = await fetch(cloudUrl + '?action=pull&station=' + currentStation, {
-        method: 'POST', mode: 'cors', cache: 'no-store',
-        headers: { 'Content-Type': 'text/plain' },
-        body: '{}'
-      });
-    } catch(e1) {
-      // Fallback to GET if POST fails
-      method = 'GET(fallback)';
-      resp = await fetch(cloudUrl + '?station=' + currentStation + '&_t=' + Date.now(), {
-        method: 'GET', mode: 'cors', cache: 'no-store'
-      });
-    }
-    const fetchMs = Date.now() - fetchStart;
-    const text = await resp.text();
-    const size = text.length;
-    let data;
-    try { data = JSON.parse(text); } catch(e) { showDiagToast(`Parse error (${size} bytes): ${e.message}`, true); return; }
-
-    // Extract diagnostic timestamps
-    const now = Date.now();
-    const servedAt = data._servedAt || null;
-    const fileModified = data._fileModified || null;
-    const pushTs = data._cloudPushTs || null;
-    const lastUpd = data.lastUpdated || null;
-    const gasVer = data._gasVersion || 'unknown';
-    const driverCount = data.drivers ? Object.keys(data.drivers).length : 0;
-    const station = data.station || '?';
-
-    const ageStr = (ts) => {
-      if (!ts) return 'N/A';
-      const s = Math.floor((now - ts) / 1000);
-      if (s < 60) return s + 's ago';
-      const m = Math.floor(s / 60);
-      if (m < 60) return m + 'm ' + (s % 60) + 's ago';
-      return Math.floor(m / 60) + 'h ' + (m % 60) + 'm ago';
-    };
-
-    // Apply data
-    if (data.drivers) {
-      memory = data;
-      reapplyPendingCommands();
-      lastFetch = Date.now();
-      const dataAge = pushTs ? now - pushTs : (lastUpd ? now - lastUpd : null);
-      const isStale = dataAge && dataAge > 120000;
-      setSyncStatus(isStale ? 'stale' : 'live', dataAge);
-      render();
-    }
-
-    // Show diagnostic
-    const lines = [
-      `📡 Method: ${method} · ${fetchMs}ms · ${(size/1024).toFixed(1)}KB`,
-      `🏢 Station: ${station} · ${driverCount} drivers`,
-      `⚙️ GAS: v${gasVer}`,
-      `📤 Desktop pushed: ${ageStr(pushTs)}`,
-      `💾 Desktop saved: ${ageStr(lastUpd)}`,
-      `📁 Drive file modified: ${ageStr(fileModified)}`,
-      `🖥 GAS served: ${ageStr(servedAt)}`,
-    ];
-
-    // Determine the problem
-    if (!servedAt) {
-      lines.push('', '⚠️ GAS v3.2 NOT deployed — no _servedAt in response');
-    } else if (servedAt && fileModified && (now - servedAt) < 10000 && (now - fileModified) > 300000) {
-      lines.push('', '❌ Desktop is NOT pushing — Drive file is old but GAS served fresh');
-    } else if (servedAt && (now - servedAt) > 60000) {
-      lines.push('', '⚠️ GAS response is cached — served ' + ageStr(servedAt));
-    } else if (pushTs && (now - pushTs) < 120000) {
-      lines.push('', '✅ Data is fresh!');
-    }
-
-    showDiagModal(lines);
-
-  } catch (e) {
-    showDiagToast('Fetch failed: ' + e.message, true);
-  }
-
-  fetchDefects();
-  fetchAvi();
+  fetchData();
 }
 
-function showDiagModal(lines) {
-  const html = lines.map(l => {
-    if (l === '') return '<div style="height:6px"></div>';
-    if (l.startsWith('✅')) return `<div style="color:#22c55e;font-weight:700;font-size:12px">${l}</div>`;
-    if (l.startsWith('❌')) return `<div style="color:#ef4444;font-weight:700;font-size:12px">${l}</div>`;
-    if (l.startsWith('⚠️')) return `<div style="color:#f59e0b;font-weight:700;font-size:12px">${l}</div>`;
-    return `<div style="color:var(--fg2);font-size:11px">${l}</div>`;
-  }).join('');
-
-  document.getElementById('modalContent').innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <div style="font-size:14px;font-weight:800;color:var(--green)">🔍 Sync Diagnostic</div>
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
-    <div style="background:var(--bg2);border:1px solid var(--bg3);border-radius:8px;padding:10px;font-family:monospace;line-height:1.8">
-      ${html}
-    </div>
-    <div style="margin-top:10px;font-size:9px;color:var(--fg3);text-align:center">
-      Dispatch Radar Mobile V${MOBILE_VERSION}
-    </div>
-  `;
-  document.getElementById('driverModal').classList.add('open');
-}
-
-function showDiagToast(msg, isError) {
-  showToast(msg, isError);
-}
-
-// V5.1: Toggle INSP DONE cards between compact (🔒) and expanded (🔓) mode
-function toggleInspCompact() {
-  inspExpanded = !inspExpanded;
-  const btn = document.getElementById('inspToggleBtn');
-  btn.textContent = inspExpanded ? '🔓' : '🔒';
-  btn.title = inspExpanded ? 'Lock — compact INSP DONE cards' : 'Unlock — expand INSP DONE cards';
-  if (inspExpanded) {
-    btn.classList.add('active');
-  } else {
-    btn.classList.remove('active');
-  }
-  renderDriverList();
+// V3.2: Get vehicle ID for a driver — reads from vehicleMapCache (synced from desktop)
+// Desktop stores vehicle IDs in a separate vehicleMap, NOT on driver.vehicleId.
+// The map is persisted as memory.vehicleMapCache and pushed to cloud.
+function getVehicleId(d) {
+  if (!d || !d.id) return '';
+  // Primary: vehicleMapCache (authoritative source from desktop)
+  const cache = memory.vehicleMapCache || {};
+  const raw = cache[d.id] || '';
+  if (raw) return raw.replace(/[()\[\]]/g, '').trim().toUpperCase();
+  // Fallback: driver.vehicleId (may be set in some cases)
+  if (d.vehicleId) return d.vehicleId.replace(/[()\[\]]/g, '').trim().toUpperCase();
+  return '';
 }
 
 function setSyncStatus(status, detail) {
@@ -1387,38 +1084,25 @@ function setSyncStatus(status, detail) {
 
   if (status === 'live') {
     dot.classList.add('live');
-    const ageStr = detail ? formatDataAge(detail) : '';
-    label.textContent = '● Synced · ' + new Date(lastFetch).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + (ageStr ? ' · Data: ' + ageStr : '');
-    label.style.color = '';
+    // V3.2: Show actual data age if diagnostic metadata is available
+    let ageStr = '';
+    if (memory._fileModified) {
+      const ageSec = Math.round((Date.now() - memory._fileModified) / 1000);
+      if (ageSec < 60) ageStr = ` · ${ageSec}s old`;
+      else if (ageSec < 3600) ageStr = ` · ${Math.round(ageSec / 60)}m old`;
+      else ageStr = ` · ${Math.round(ageSec / 3600)}h old`;
+    }
+    label.textContent = '● Synced' + ageStr + ' · ' + new Date(lastFetch).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
     document.getElementById('syncBtn').classList.add('synced');
-  } else if (status === 'stale') {
-    dot.classList.add('err');
-    const ageStr = detail ? formatDataAge(detail) : '?';
-    label.innerHTML = '⚠ Data is <b style="color:var(--amber)">' + ageStr + ' old</b> — desktop may not be pushing';
-    label.style.color = 'var(--amber)';
-    document.getElementById('syncBtn').classList.remove('synced');
   } else if (status === 'syncing') {
     label.textContent = '☁️ Syncing...';
-    label.style.color = '';
     document.getElementById('syncBtn').classList.remove('synced');
   } else if (status === 'error') {
     dot.classList.add('err');
     label.textContent = '✗ ' + (detail || 'Offline');
-    label.style.color = '';
   } else if (status === 'empty') {
     label.textContent = '⚠ No data for ' + currentStation;
-    label.style.color = '';
   }
-}
-
-function formatDataAge(ms) {
-  if (!ms || ms < 0) return '';
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return s + 's';
-  const m = Math.floor(s / 60);
-  if (m < 60) return m + 'm ' + (s % 60) + 's';
-  const h = Math.floor(m / 60);
-  return h + 'h ' + (m % 60) + 'm';
 }
 
 // ═══════════════════════
@@ -1429,27 +1113,17 @@ async function sendCommand(type, tid, value, extra) {
   const cmd = { type, tid, value, ts: Date.now() };
   if (extra) Object.assign(cmd, extra);
 
-  // V5.0: Store command locally for persistence across refreshes
-  addPendingCommand(type, tid, value, extra);
-
   // Optimistic local update
   if (memory.drivers && memory.drivers[tid]) {
     const d = memory.drivers[tid];
-    if (type === 'pin') { d.isPinned = !!value; d.isPinnedManually = !!value; }
-    if (type === 'sweeper') { d.isSweeper = !!value; if (value) { d.isPinned = true; d.sweeperManuallySet = true; d.isHelper = false; d.isFlexRoute = false; }}
-    if (type === 'helper') { d.isHelper = !!value; if (value) { d.helperManuallySet = true; d.isSweeper = false; d.isFlexRoute = false; }}
-    if (type === 'flex') { d.isFlexRoute = !!value; if (value) { d.flexRouteManuallySet = true; d.isSweeper = false; d.isHelper = false; }}
+    if (type === 'pin') d.isPinned = !!value;
+    if (type === 'sweeper') { d.isSweeper = !!value; if (value) { d.isPinned = true; d.isHelper = false; d.isFlexRoute = false; }}
+    if (type === 'helper') { d.isHelper = !!value; if (value) { d.isSweeper = false; d.isFlexRoute = false; }}
+    if (type === 'flex') { d.isFlexRoute = !!value; if (value) { d.isSweeper = false; d.isHelper = false; }}
     if (type === 'delivered') d.manuallyDelivered = !!value;
-    if (type === 'inspectionDone') { d.inspectionDone = !!value; if (value) { d.inspectionDoneTime = cmd.ts; d.inspectionManual = true; }}
+    if (type === 'inspectionDone') d.inspectionDone = !!value;
     if (type === 'notify5') d.notify5 = !!value;
     if (type === 'notifyDone') d.notifyDone = !!value;
-    if (type === 'manualBreak') { d._manualBreak = true; d.hasNoBreaks = false; }
-    if (type === 'extraPhone' && extra) {
-      d.extraPhoneManualDelta = (d.extraPhoneManualDelta || 0) + (extra.delta || 0);
-      d.extraPhoneCount = Math.max(0, (d._debriefPhoneCount || 0) + (d.extraPhoneManualDelta || 0));
-      d.hasExtraPhone = d.extraPhoneCount > 0;
-    }
-    if (type === 'remove') d.isRemoved = !!value;
     render();
   }
 
@@ -1665,7 +1339,6 @@ function getFiltered(filter) {
     case 'COMPLETED': return raw.filter(d => d.state === 'FINISHED' && isActive(d));
     case 'HELPING': return raw.filter(d => d.isHelper);
     case 'GOT_GAS': return raw.filter(d => d.gotGas);
-    case 'EXTRA_PHONE': return raw.filter(d => d.hasExtraPhone);
     default: return raw;
   }
 }
@@ -1684,9 +1357,7 @@ function getCounts() {
     MISSING: raw.filter(d => (d.missing || 0) > 0).length + getRemoved().length,
     COMPLETED: raw.filter(d => d.state === 'FINISHED' && isActive(d)).length,
     HELPING: raw.filter(d => d.isHelper).length,
-    GOT_GAS: raw.filter(d => d.gotGas).length,
-    EXTRA_PHONE: raw.filter(d => d.hasExtraPhone).length,
-    INSPECTIONS: raw.filter(d => d.inspectionDone && !d.isRemoved).length,
+    GOT_GAS: raw.filter(d => d.gotGas).length
   };
 }
 
@@ -1728,15 +1399,10 @@ function renderFilters() {
     { id: 'MISSING', l: '👁 Missing', c: c.MISSING },
     { id: 'COMPLETED', l: '✓ Done', c: c.COMPLETED },
     { id: 'HELPING', l: '🤝 Help', c: c.HELPING },
-    { id: 'BREAK_HISTORY', l: '📊 Breaks', c: '' },
-    ...(c.EXTRA_PHONE > 0 ? [{ id: 'EXTRA_PHONE', l: '📱 Phones', c: c.EXTRA_PHONE }] : []),
-    { id: 'DEFECTS', l: '🚫 Defects', c: '' },
-    { id: 'INSPECTIONS', l: '🛡 Insp', c: c.INSPECTIONS },
-    { id: 'AVI', l: '📋 AVI', c: '' },
     { id: 'GOT_GAS', l: '⛽ Gas', c: c.GOT_GAS },
   ];
   document.getElementById('filterTabs').innerHTML = defs.map(f =>
-    `<button class="fbtn ${activeFilter === f.id ? 'active' : ''}" onclick="setFilter('${f.id}')">${f.l}${f.c !== '' ? ' (' + f.c + ')' : ''}</button>`
+    `<button class="fbtn ${activeFilter === f.id ? 'active' : ''}" onclick="setFilter('${f.id}')">${f.l} (${f.c})</button>`
   ).join('');
 }
 
@@ -1747,251 +1413,6 @@ function setFilter(f) {
 }
 
 function renderDriverList() {
-  const el = document.getElementById('driverList');
-
-  // ═══ CUSTOM TABS (special rendering — not driver cards) ═══
-
-  // ── BREAK HISTORY ──
-  if (activeFilter === 'BREAK_HISTORY') {
-    const raw = getRaw();
-    let noBreaks = [], shortBreaks = [], goodBreaks = [];
-    raw.forEach(d => {
-      if (searchQuery && !(d.name||'').toLowerCase().includes(searchQuery) && !(d.route||'').toLowerCase().includes(searchQuery)) return;
-      if (d.hasNoBreaks) { noBreaks.push(d); }
-      else {
-        let maxMins = 0, details = [];
-        (d.breaks || []).forEach(b => {
-          const dur = b.end ? Math.round((b.end - b.start) / 60000) : Math.round((Date.now() - b.start) / 60000);
-          if (dur > maxMins) maxMins = dur;
-          details.push(`${fmt(b.start)} → ${b.end ? fmt(b.end) : 'Now'} (${dur}m)`);
-        });
-        d._brkStr = details.join(' · ');
-        if (maxMins < 30) shortBreaks.push(d); else goodBreaks.push(d);
-      }
-    });
-    const sec = (title, color, arr) => `
-      <div style="font-weight:700;color:${color};margin:8px 0 4px;font-size:11px">${title} (${arr.length})</div>
-      ${arr.map(d => `<div class="dcard" style="padding:6px 8px;border-left:3px solid ${color}" onclick="openModal('${d.id}')">
-        <div style="color:#fff;font-weight:700;font-size:11px">${abbr(d.name)} <span style="color:var(--fg3);font-weight:400">(${d.route || '?'})</span></div>
-        ${d._brkStr ? `<div style="color:var(--fg2);font-size:9px;margin-top:2px">${d._brkStr}</div>` : ''}
-      </div>`).join('') || '<div style="color:var(--fg3);font-size:10px;font-style:italic">None</div>'}`;
-    el.innerHTML = sec('✅ Breaks Taken (30m+)', '#10b981', goodBreaks) + sec('⚠️ Short Breaks (< 30m)', '#f59e0b', shortBreaks) + sec('❌ No Breaks Taken', '#ef4444', noBreaks);
-    return;
-  }
-
-  // ── INACTIVE (with history sub-tab) ──
-  if (activeFilter === 'INACTIVE') {
-    const raw = getRaw();
-    const act = raw.filter(d => d.state === 'INACTIVE');
-    const subHtml = `<div style="display:flex;gap:4px;margin-bottom:6px">
-      <button class="fbtn ${inactiveSubTab==='current'?'active':''}" onclick="inactiveSubTab='current';renderDriverList()">🔴 Current (${act.length})</button>
-      <button class="fbtn ${inactiveSubTab==='history'?'active':''}" onclick="inactiveSubTab='history';renderDriverList()">⏳ History</button>
-    </div>`;
-    if (inactiveSubTab === 'history') {
-      let inactDrivers = [];
-      raw.forEach(d => {
-        let totalMins = 0;
-        (d.inactivityLog || []).forEach(l => totalMins += (l.duration || 0));
-        if (d.state === 'INACTIVE' && d.currentInactiveStart) totalMins += Math.floor((Date.now() - d.currentInactiveStart) / 60000);
-        if (totalMins > 0) inactDrivers.push({ ...d, _totalInact: totalMins });
-      });
-      inactDrivers.sort((a, b) => b._totalInact - a._totalInact);
-      el.innerHTML = subHtml + `<div style="font-weight:700;color:var(--amber);font-size:11px;margin-bottom:6px">⏳ Inactivity History (${inactDrivers.length})</div>` +
-        (inactDrivers.map(d => `<div class="dcard" style="padding:6px 8px;border-left:3px solid var(--amber)" onclick="openModal('${d.id}')">
-          <div style="display:flex;justify-content:space-between;margin-bottom:2px">
-            <span style="color:#fff;font-weight:700;font-size:11px">${abbr(d.name)} <span style="color:var(--fg3);font-weight:400">(${d.route || '?'})</span></span>
-            <span style="color:var(--amber);font-weight:700;font-size:10px">${d._totalInact}m total</span>
-          </div>
-          ${(d.inactivityLog||[]).map(l => `<div style="color:var(--fg2);font-size:9px">• ${fmt(l.start)} — ${l.duration}m</div>`).join('')}
-          ${d.state==='INACTIVE'&&d.currentInactiveStart?`<div style="color:var(--red);font-size:9px;font-weight:700">• NOW: ${fmt(d.currentInactiveStart)} — ${Math.floor((Date.now()-d.currentInactiveStart)/60000)}m</div>`:''}
-        </div>`).join('') || '<div style="color:var(--fg3);font-size:10px;font-style:italic">No inactivity recorded</div>');
-      return;
-    }
-    // Current sub-tab: fall through to normal card rendering but prepend sub-tab header
-    el.innerHTML = subHtml;
-    const cards = act.filter(d => !searchQuery || (d.name||'').toLowerCase().includes(searchQuery) || (d.route||'').toLowerCase().includes(searchQuery))
-      .map(d => buildCard(d)).join('') || '<div class="empty"><p>No idle drivers</p></div>';
-    el.innerHTML = subHtml + cards;
-    return;
-  }
-
-  // ── INSPECTIONS ──
-  if (activeFilter === 'INSPECTIONS') {
-    const raw = getRaw();
-    const inspDone = raw.filter(d => d.inspectionDone && !d.isRemoved)
-      .sort((a, b) => (b.inspectionDoneTime || 0) - (a.inspectionDoneTime || 0));
-    const inspPending = raw.filter(d => !d.inspectionDone && !d.isRemoved && d.state !== 'FINISHED')
-      .sort((a, b) => (a.route || '').localeCompare(b.route || ''));
-    el.innerHTML = `
-      <div style="font-weight:700;color:#22c55e;font-size:11px;margin:4px 0">✅ Post-Inspection Done (${inspDone.length})</div>
-      ${inspDone.map(d => `<div class="dcard" style="padding:5px 8px;border-left:3px solid #22c55e;background:linear-gradient(145deg,#0d3d22,#072918)" onclick="openModal('${d.id}')">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <span style="color:#fff;font-weight:700;font-size:11px">${d.route||'?'} ${abbr(d.name)}</span>
-          <span style="color:var(--fg3);font-size:9px">${d.inspectionDoneTime ? fmt(d.inspectionDoneTime) : ''}</span>
-        </div>
-        <div style="color:#d1d5db;font-size:9px;margin-top:1px">${d.vehicleId || ''} · ${d.stopsCompleted||0} stops</div>
-      </div>`).join('') || '<div style="color:var(--fg3);font-size:10px;font-style:italic">None yet</div>'}
-      <div style="font-weight:700;color:var(--amber);font-size:11px;margin:10px 0 4px">⏳ Pending (${inspPending.length})</div>
-      ${inspPending.map(d => `<div class="dcard" style="padding:5px 8px;border-left:3px solid var(--amber)" onclick="openModal('${d.id}')">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <span style="color:#fff;font-weight:700;font-size:11px">${d.route||'?'} ${abbr(d.name)}</span>
-          <span style="color:var(--fg3);font-size:9px">${d.state || ''}</span>
-        </div>
-        <div style="color:#d1d5db;font-size:9px;margin-top:1px">${d.vehicleId || ''} · Rem: ${rem(d)} stops</div>
-      </div>`).join('') || '<div style="color:var(--fg3);font-size:10px;font-style:italic">All complete!</div>'}`;
-    return;
-  }
-
-  // ── AVI ──
-  if (activeFilter === 'AVI') {
-    const aviEntries = (mobileAvi.data || []);
-    if (!aviEntries.length) {
-      const lastSync = mobileAvi.ts ? new Date(mobileAvi.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : 'Never';
-      el.innerHTML = `<div style="text-align:center;padding:20px">
-        <div style="font-size:24px;margin-bottom:8px">📋</div>
-        <div style="font-size:12px;color:var(--fg2);margin-bottom:4px">No AVI data available</div>
-        <div style="font-size:10px;color:var(--fg3)">Last sync: ${lastSync}</div>
-        <div style="font-size:9px;color:var(--fg3);margin-top:6px">AVI data syncs from the desktop Dispatch Radar.<br>Desktop fetches AVIs after 2:30 PM ET.</div>
-      </div>`;
-      return;
-    }
-    // Match to active drivers
-    let aviList = aviEntries.map(e => {
-      let matchedDriver = null;
-      const eName = (e.driverName || '').toLowerCase().trim();
-      Object.entries(memory.drivers || {}).forEach(([tid, d]) => {
-        if (matchedDriver) return;
-        const dName = (d.name || '').toLowerCase().trim();
-        if (eName && dName && (eName.includes(dName) || dName.includes(eName))) {
-          matchedDriver = { name: d.name, route: d.route, tid };
-        }
-      });
-      return { ...e, matchedDriver };
-    });
-    // Search filter
-    if (searchQuery) {
-      aviList = aviList.filter(e =>
-        (e.driverName || '').toLowerCase().includes(searchQuery) ||
-        (e.vehicle || '').toLowerCase().includes(searchQuery)
-      );
-    }
-    // Sort: incomplete first
-    aviList.sort((a, b) => {
-      if (!a.completed && b.completed) return -1;
-      if (a.completed && !b.completed) return 1;
-      return (a.driverName || '').localeCompare(b.driverName || '');
-    });
-    const completedCount = aviList.filter(e => e.completed).length;
-    const missingCount = aviList.filter(e => !e.completed).length;
-    const lastSync = mobileAvi.ts ? new Date(mobileAvi.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '?';
-    el.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <span style="font-weight:700;color:#60a5fa;font-size:12px">📋 AVI Completions (${aviEntries.length})</span>
-        <span style="font-size:9px;color:var(--fg3)">Synced: ${lastSync}</span>
-      </div>
-      <div style="display:flex;gap:4px;margin-bottom:8px">
-        <div style="flex:1;background:#10b98120;border:1px solid #10b98140;border-radius:6px;padding:5px;text-align:center">
-          <div style="font-size:14px;font-weight:700;color:var(--green)">${completedCount}</div>
-          <div style="font-size:8px;color:var(--fg3)">COMPLETED</div>
-        </div>
-        <div style="flex:1;background:#ef444420;border:1px solid #ef444440;border-radius:6px;padding:5px;text-align:center">
-          <div style="font-size:14px;font-weight:700;color:var(--red)">${missingCount}</div>
-          <div style="font-size:8px;color:var(--fg3)">MISSING</div>
-        </div>
-      </div>
-      ${aviList.map(e => `
-        <div style="padding:5px 8px;margin-bottom:3px;border-radius:5px;background:#0f172a;border-left:3px solid ${e.completed ? 'var(--green)' : 'var(--red)'};font-size:10px">
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <span style="color:#fff;font-weight:700">${e.completed ? '✅' : '❌'} ${e.driverName || 'Unknown'}</span>
-            <span style="background:${e.completed ? '#10b98140' : '#ef444440'};color:${e.completed ? 'var(--green)' : 'var(--red)'};padding:1px 4px;border-radius:3px;font-size:8px;font-weight:700">${e.completed ? 'DONE' : 'MISSING'}</span>
-          </div>
-          <div style="color:var(--fg3);margin-top:1px">
-            ${e.vehicle ? '🚐 ' + e.vehicle : ''}
-            ${e.matchedDriver ? ' · <span style="color:#60a5fa">📍 ' + (e.matchedDriver.route || '') + '</span>' : ' · <span style="color:var(--fg3);font-style:italic">Not in active fleet</span>'}
-          </div>
-        </div>
-      `).join('') || '<div style="color:var(--fg3);font-size:10px;text-align:center">No entries match</div>'}`;
-    return;
-  }
-
-  // ── DEFECTS ──
-  if (activeFilter === 'DEFECTS') {
-    const defects = (mobileDefects.vehicles || []).filter(v => v.vin !== 'pending' && v.vin !== 'PENDING');
-    if (!defects.length) {
-      const lastSync = mobileDefects.ts ? new Date(mobileDefects.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : 'Never';
-      el.innerHTML = `<div style="text-align:center;padding:20px">
-        <div style="font-size:24px;margin-bottom:8px">🚫</div>
-        <div style="font-size:12px;color:var(--fg2);margin-bottom:4px">No defect data available</div>
-        <div style="font-size:10px;color:var(--fg3)">Last sync: ${lastSync}</div>
-        <div style="font-size:9px;color:var(--fg3);margin-top:6px">Defects sync from the desktop Dispatch Radar every 2 minutes.</div>
-      </div>`;
-      return;
-    }
-    // Match defects to active drivers
-    defects.forEach(v => {
-      v._matchedDriver = null;
-      if (!v.vanNum) return;
-      const normVan = (v.vanNum || '').toUpperCase().replace(/[\s\-\.]/g, '');
-      Object.entries(memory.drivers || {}).forEach(([tid, d]) => {
-        if (v._matchedDriver) return;
-        const dVeh = (d.vehicleId || d.vehicle || '').toUpperCase().replace(/[\s\-\.\(\)\[\]]/g, '');
-        if (dVeh && dVeh === normVan) v._matchedDriver = { name: d.name, route: d.route, state: d.state, tid };
-      });
-    });
-    defects.sort((a, b) => {
-      if (a.grounded && !b.grounded) return -1;
-      if (!a.grounded && b.grounded) return 1;
-      return (b.detectedAt || 0) - (a.detectedAt || 0);
-    });
-    const groundedCount = defects.filter(v => v.grounded).length;
-    const clearedCount = defects.filter(v => !v.grounded).length;
-    const lastSync = mobileDefects.ts ? new Date(mobileDefects.ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '?';
-    el.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <span style="font-weight:700;color:var(--red);font-size:12px">🚫 Vehicle Defects (${defects.length})</span>
-        <span style="font-size:9px;color:var(--fg3)">Synced: ${lastSync}</span>
-      </div>
-      <div style="display:flex;gap:4px;margin-bottom:8px">
-        <div style="flex:1;background:#ef444420;border:1px solid #ef444440;border-radius:6px;padding:5px;text-align:center">
-          <div style="font-size:14px;font-weight:700;color:var(--red)">${groundedCount}</div>
-          <div style="font-size:8px;color:var(--fg3)">GROUNDED</div>
-        </div>
-        <div style="flex:1;background:#10b98120;border:1px solid #10b98140;border-radius:6px;padding:5px;text-align:center">
-          <div style="font-size:14px;font-weight:700;color:var(--green)">${clearedCount}</div>
-          <div style="font-size:8px;color:var(--fg3)">CLEARED</div>
-        </div>
-      </div>
-      ${defects.map(v => {
-        const isG = v.grounded;
-        const border = isG ? 'var(--red)' : 'var(--green)';
-        const bg = isG ? '#1a0a0a' : '#0a1a10';
-        const badge = isG
-          ? '<span style="background:#7f1d1d;color:#fca5a5;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700">🔴 GROUNDED</span>'
-          : '<span style="background:#064e3b;color:#6ee7b7;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700">✅ CLEARED</span>';
-        const det = v.detectedAt ? fmt(v.detectedAt) : '';
-        const unG = v.ungroundedAt && !isG ? fmt(v.ungroundedAt) : '';
-        const driverLine = v._matchedDriver
-          ? `<div style="margin-top:3px;padding:2px 5px;background:#1e293b;border-radius:3px;font-size:9px;color:#93c5fd">👤 <b>${v._matchedDriver.name}</b> — ${v._matchedDriver.route} (${v._matchedDriver.state || '?'})</div>`
-          : '';
-        return `<div style="padding:6px 8px;margin-bottom:4px;background:${bg};border-left:3px solid ${border};border-radius:5px;font-size:10px;border:1px solid ${isG?'#374151':'#1f3d2e'}">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
-            <span style="color:#fff;font-weight:700;font-size:11px">${v.vanNum || 'Unknown'}${v.type ? ' <span style="color:var(--fg3);font-weight:400">(' + v.type + ')</span>' : ''}</span>
-            ${badge}
-          </div>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;color:var(--fg3);font-size:9px">
-            ${v.plate ? '<span>🔑 ' + v.plate + '</span>' : ''}
-            ${v.vin ? '<span>🔩 ' + v.vin.slice(-6) + '</span>' : ''}
-            ${det ? '<span>⏱ ' + det + '</span>' : ''}
-            ${unG ? '<span>✅ ' + unG + '</span>' : ''}
-          </div>
-          ${driverLine}
-        </div>`;
-      }).join('')}`;
-    return;
-  }
-
-  // ═══ STANDARD DRIVER-CARD TABS ═══
-
   let drivers = getFiltered(activeFilter);
 
   // Search
@@ -1999,26 +1420,14 @@ function renderDriverList() {
     drivers = drivers.filter(d =>
       (d.name || '').toLowerCase().includes(searchQuery) ||
       (d.route || '').toLowerCase().includes(searchQuery) ||
-      (d.vehicleId || '').toLowerCase().includes(searchQuery)
+      getVehicleId(d).toLowerCase().includes(searchQuery)
     );
   }
 
   // Sort
   drivers.sort((a, b) => {
-    // V5.0: INSP DONE goes to the bottom (matching desktop behavior)
-    const aInsp = a.inspectionDone && !a.isRemoved ? 1 : 0;
-    const bInsp = b.inspectionDone && !b.isRemoved ? 1 : 0;
-    if (aInsp !== bInsp) return aInsp - bInsp; // non-insp first, insp last
-
-    // Within INSP DONE group: most recent inspection on top
-    if (aInsp && bInsp) {
-      return (b.inspectionDoneTime || 0) - (a.inspectionDoneTime || 0);
-    }
-
-    // Pinned drivers on top
     if (a.isPinned && !b.isPinned) return -1;
     if (!a.isPinned && b.isPinned) return 1;
-    // Sweepers after pinned
     if (a.isSweeper && !b.isSweeper) return -1;
     if (!a.isSweeper && b.isSweeper) return 1;
     switch (sortMode) {
@@ -2034,6 +1443,7 @@ function renderDriverList() {
     }
   });
 
+  const el = document.getElementById('driverList');
   if (!drivers.length) {
     el.innerHTML = `<div class="empty"><p>${searchQuery ? 'No match for "' + searchQuery + '"' : 'No drivers in this filter'}</p></div>`;
     return;
@@ -2055,7 +1465,7 @@ function buildCard(d) {
   const style = cardStyle(d);
   const state = dispState(d);
   const gd = gpsDot(d);
-  const veh = d.vehicleId || '';
+  const veh = getVehicleId(d);
   const pkgTotal = Math.max(d.totalPkgs || 0, d.remainingPkgs || 0);
   const stopsRem = sR;
   const pkgsRem = dP;
@@ -2069,8 +1479,8 @@ function buildCard(d) {
   const noBreakWarn = isAfter330 && d.hasNoBreaks && !d.inspectionDone && !d.isRemoved &&
     d.state !== 'ON BREAK' && d.state !== 'FINISHED' && !d.isSweeper && !d.isFlexRoute && !d.isHelper;
 
-  // Inspection done compact card (V5.1: only when locked/compact mode)
-  if (d.inspectionDone && !d.isRemoved && !inspExpanded) {
+  // Inspection done compact card
+  if (d.inspectionDone && !d.isRemoved) {
     const label = d.isSweeper ? '<span style="color:#fb923c;font-weight:800">🧹 SWP</span>'
       : d.isFlexRoute ? '<span style="color:#a855f7;font-weight:800">📦 FLX</span>'
       : `<span style="color:#fff;font-weight:800">${d.route || ''}</span>`;
@@ -2205,13 +1615,11 @@ function openModal(tid) {
   // GPS section
   let gpsHtml = '';
   const gpsStatus = gpsStatusText(d);
-  const gpsLat = d.lastKnownLat || d.lat;
-  const gpsLon = d.lastKnownLon || d.lon;
-  if (gpsLat && gpsLon && Number.isFinite(gpsLat) && Number.isFinite(gpsLon)) {
+  if (d.lat && d.lon && Number.isFinite(d.lat) && Number.isFinite(d.lon)) {
     gpsHtml = `<div class="modal-section">
       <div class="modal-section-title" style="color:var(--blue)">📍 GPS Location</div>
-      <div style="font-size:10px;color:var(--fg2);margin-bottom:4px">${gpsStatus} · ${gpsLat.toFixed(4)}, ${gpsLon.toFixed(4)}</div>
-      <a href="https://maps.apple.com/?ll=${gpsLat},${gpsLon}&q=${encodeURIComponent(name)}" target="_blank"
+      <div style="font-size:10px;color:var(--fg2);margin-bottom:4px">${gpsStatus} · ${d.lat.toFixed(4)}, ${d.lon.toFixed(4)}</div>
+      <a href="https://maps.apple.com/?ll=${d.lat},${d.lon}&q=${encodeURIComponent(name)}" target="_blank"
         style="display:block;background:var(--bg);padding:7px;border-radius:6px;text-align:center;color:var(--blue);font-weight:600;font-size:11px;text-decoration:none;border:1px solid var(--bg3)">
         📍 Open in Maps</a>
     </div>`;
@@ -2341,7 +1749,7 @@ function openModal(tid) {
           <span style="overflow:hidden;text-overflow:ellipsis">${displayName}</span>
           ${d.inspectionDone ? '<span style="background:#22c55e;color:#fff;padding:1px 5px;border-radius:3px;font-size:8px;font-weight:700">INSP DONE</span>' : ''}
         </div>
-        ${d.vehicleId ? `<div style="font-size:10px;color:#d1d5db;font-weight:600;margin-top:2px">🚐 ${d.vehicleId}</div>` : ''}
+        ${getVehicleId(d) ? `<div style="font-size:10px;color:#d1d5db;font-weight:600;margin-top:2px">🚐 ${getVehicleId(d)}</div>` : ''}
         <div style="font-size:10px;color:var(--fg2);margin-top:3px">
           Work: <a href="tel:${workPhone}" style="color:var(--blue);text-decoration:none">${formatPhone(workPhone)}</a>
         </div>
@@ -2435,7 +1843,7 @@ function openModal(tid) {
     ${retTbaHtml}
 
     <div style="margin-top:10px;padding-top:6px;border-top:1px solid var(--bg3);font-size:8px;color:var(--fg3)">
-      TID: ${tid} · Station: ${memory.station || currentStation} · Dispatch Radar by Andrismar T.
+      TID: ${tid} · Station: ${memory.station || currentStation} · Mobile Amazon Radar by Andrismar T.
     </div>
   `;
 
@@ -2452,12 +1860,7 @@ function closeModal() {
 
 function openMap() {
   document.getElementById('mapOverlay').classList.add('open');
-  // V5.0: Use lastKnownLat/lastKnownLon — that's what the desktop stores in cloud memory
-  const drivers = getRaw().filter(d => {
-    const lat = d.lastKnownLat || d.lat;
-    const lon = d.lastKnownLon || d.lon;
-    return lat && lon && Number.isFinite(lat) && Number.isFinite(lon);
-  }).map(d => ({ ...d, _mapLat: d.lastKnownLat || d.lat, _mapLon: d.lastKnownLon || d.lon }));
+  const drivers = getRaw().filter(d => d.lat && d.lon && Number.isFinite(d.lat) && Number.isFinite(d.lon));
   document.getElementById('mapCount').textContent = drivers.length + ' on map';
 
   if (!leafletMap) {
@@ -2486,13 +1889,13 @@ function openMap() {
   drivers.forEach(d => {
     const color = d.inspectionDone ? '#22c55e' : d.state === 'INACTIVE' ? '#f59e0b' : d.state === 'ON BREAK' ? '#3b82f6' :
       d.state === 'FINISHED' ? '#10b981' : d.isSweeper ? '#fb923c' : d.isHelper ? '#60a5fa' : d.isFlexRoute ? '#a855f7' : '#10b981';
-    const m = L.circleMarker([d._mapLat, d._mapLon], { radius: 7, color, fillColor: color, fillOpacity: .85, weight: 1.5 })
-      .bindPopup(`<div style="font-size:11px"><b>${d.route || '?'}</b> ${abbr(d.name)}<br>${d.vehicleId || ''}<br>${dispState(d)}<br>Stops: ${d.stopsCompleted || 0}/${d.stopsTotal || 0}<br>Pace: ${d.pace || '—'}</div>`);
+    const m = L.circleMarker([d.lat, d.lon], { radius: 7, color, fillColor: color, fillOpacity: .85, weight: 1.5 })
+      .bindPopup(`<div style="font-size:11px"><b>${d.route || '?'}</b> ${abbr(d.name)}<br>${getVehicleId(d)}<br>${dispState(d)}<br>Stops: ${d.stopsCompleted || 0}/${d.stopsTotal || 0}<br>Pace: ${d.pace || '—'}</div>`);
     leafletMap.addLayer(m);
     mapMarkers.push(m);
   });
 
-  const bounds = L.latLngBounds(drivers.map(d => [d._mapLat, d._mapLon]));
+  const bounds = L.latLngBounds(drivers.map(d => [d.lat, d.lon]));
   if (sc2) bounds.extend(sc2);
   leafletMap.fitBounds(bounds, { padding: [30, 30] });
 }
@@ -2528,8 +1931,6 @@ async function renderDebriefBody() {
   if (debriefMode === 'morning') {
     title.innerHTML = '☀️ Morning Debrief';
     saveBtn.style.display = '';
-    saveBtn.textContent = '💾 Save';
-    saveBtn.onclick = saveDebriefToCloud;
     body.innerHTML = `
       <div class="debrief-tabs">
         <button class="debrief-tab active" onclick="switchDebriefMode('morning')">☀️ Morning</button>
@@ -2538,31 +1939,17 @@ async function renderDebriefBody() {
       <p style="font-size:11px;color:var(--fg2);margin-bottom:8px">Paste or edit the morning debrief. Syncs with desktop.</p>
       <textarea class="debrief-textarea" id="debriefText" placeholder="Paste morning debrief here..."></textarea>
       <div id="debriefParsed" style="margin-top:10px"></div>
-      <p style="font-size:8px;color:var(--fg3);text-align:center;margin-top:12px;font-style:italic">Dispatch Radar — By: Andrismar T.</p>
+      <p style="font-size:8px;color:var(--fg3);text-align:center;margin-top:12px;font-style:italic">Mobile Amazon Radar — By: Andrismar T.</p>
     `;
 
     // Load existing debrief from cloud
     try {
-      const resp = await fetch(_cb(cloudUrl + '?action=debrief&station=' + currentStation));
+      const resp = await fetch(cloudUrl + '?action=debrief&station=' + currentStation);
       const data = await resp.json();
       const ta = document.getElementById('debriefText');
-      // V5.0: Desktop saves as rawText, mobile previously saved as raw — check both
-      const rawContent = data.rawText || data.raw || '';
-      if (rawContent) {
-        ta.value = rawContent;
-        // Show parsed summary of debrief content
-        parseAndShowDebrief(rawContent);
-        // Also show structured data if desktop already parsed it
-        showDebriefStructuredSummary(data);
-      } else if (data && data.attendance && data.attendance.length > 0) {
-        // Desktop saved structured data but no raw text — reconstruct
-        let reconstructed = '';
-        if (data.attendance && data.attendance.length) reconstructed += 'Attendance:\n' + data.attendance.map(a => '• ' + a).join('\n') + '\n\n';
-        if (data.sweepers && data.sweepers.length) reconstructed += 'Sweeper:\n' + data.sweepers.map(s => '• ' + (s.name || s)).join('\n') + '\n\n';
-        if (data.extraPhones && data.extraPhones.length) reconstructed += 'Extra Phones:\n' + data.extraPhones.map(ep => '• ' + (ep.name || ep)).join('\n') + '\n\n';
-        ta.value = reconstructed;
-        parseAndShowDebrief(reconstructed);
-        showDebriefStructuredSummary(data);
+      if (data && data.raw) {
+        ta.value = data.raw;
+        parseAndShowDebrief(data.raw);
       } else {
         ta.value = '';
       }
@@ -2572,9 +1959,7 @@ async function renderDebriefBody() {
     }
   } else {
     title.innerHTML = '🌙 Nightly Debrief';
-    saveBtn.style.display = '';
-    saveBtn.textContent = '💾 Save';
-    saveBtn.onclick = saveNightlyToCloud;
+    saveBtn.style.display = 'none';
     body.innerHTML = `
       <div class="debrief-tabs">
         <button class="debrief-tab" onclick="switchDebriefMode('morning')">☀️ Morning</button>
@@ -2585,7 +1970,7 @@ async function renderDebriefBody() {
 
     // Load nightly report from cloud
     try {
-      const resp = await fetch(_cb(cloudUrl + '?action=report&station=global'));
+      const resp = await fetch(cloudUrl + '?action=report&station=global');
       const data = await resp.json();
       nightlyReportData = data;
       renderNightlyReport(data);
@@ -2603,22 +1988,18 @@ async function renderDebriefBody() {
 
 function renderNightlyReport(rpt) {
   const body = document.getElementById('debriefBody');
-  const saveBtn = document.getElementById('debriefSaveBtn');
-  // V5.0: Show save button for nightly too
-  saveBtn.style.display = '';
-  saveBtn.onclick = saveNightlyToCloud;
-
-  if (!rpt || (!rpt.lastDate && !rpt.closingDispatcher1)) {
-    // No report yet — show editable blank form
-    rpt = {};
+  if (!rpt || !rpt.lastDate) {
+    body.innerHTML = `
+      <div class="debrief-tabs">
+        <button class="debrief-tab" onclick="switchDebriefMode('morning')">☀️ Morning</button>
+        <button class="debrief-tab active" onclick="switchDebriefMode('nightly')">🌙 Nightly</button>
+      </div>
+      <div class="empty"><p>No nightly report available. Generate one from the desktop version first.</p></div>
+    `;
+    return;
   }
 
-  nightlyReportData = rpt;
-
-  const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const dateStr = rpt.lastDate || nowET.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-
-  // V5.0: Fully editable nightly report form — matching desktop fields
+  // Build a read-only view of the nightly report
   let html = `
     <div class="debrief-tabs">
       <button class="debrief-tab" onclick="switchDebriefMode('morning')">☀️ Morning</button>
@@ -2626,154 +2007,56 @@ function renderNightlyReport(rpt) {
     </div>
     <div style="text-align:center;margin-bottom:10px">
       <div style="font-size:16px;font-weight:800;color:var(--indigo)">🌙 Nightly Report</div>
-      <div style="font-size:11px;color:var(--fg3)">${dateStr} · ${rpt.station || currentStation}</div>
+      <div style="font-size:11px;color:var(--fg3)">${rpt.lastDate || ''} · ${rpt.station || currentStation}</div>
     </div>
-
-    <!-- Closing Team -->
-    <div class="modal-section">
-      <div class="modal-section-title" style="color:var(--indigo)">👥 Closing Team</div>
-      <div style="display:flex;gap:6px;margin-top:4px">
-        <input class="staples-input" id="nr_disp1" placeholder="Dispatcher 1" value="${_esc(rpt.closingDispatcher1)}" style="flex:1;font-size:12px;padding:6px 8px">
-        <input class="staples-input" id="nr_disp2" placeholder="Dispatcher 2" value="${_esc(rpt.closingDispatcher2)}" style="flex:1;font-size:12px;padding:6px 8px">
-      </div>
-    </div>
-
-    <!-- Phones -->
-    <div class="modal-section">
-      <div class="modal-section-title" style="color:var(--blue)">📱 Phones</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px">
-        <div><div style="font-size:9px;color:var(--fg3);margin-bottom:2px">Used</div><input class="staples-input" id="nr_phonesUsed" type="number" inputmode="numeric" value="${rpt.phonesUsed||''}" style="font-size:12px;padding:6px 8px"></div>
-        <div><div style="font-size:9px;color:var(--fg3);margin-bottom:2px">Back</div><input class="staples-input" id="nr_phonesBack" type="number" inputmode="numeric" value="${rpt.phonesBack||''}" style="font-size:12px;padding:6px 8px"></div>
-        <div><div style="font-size:9px;color:var(--fg3);margin-bottom:2px">Total</div><input class="staples-input" id="nr_phonesTotal" type="number" inputmode="numeric" value="${rpt.phonesTotal||''}" style="font-size:12px;padding:6px 8px"></div>
-        <div><div style="font-size:9px;color:var(--fg3);margin-bottom:2px">In Repair</div><input class="staples-input" id="nr_phonesRepair" type="number" inputmode="numeric" value="${rpt.phonesRepair||''}" style="font-size:12px;padding:6px 8px"></div>
-      </div>
-    </div>
-
-    <!-- Gas Cards -->
-    <div class="modal-section">
-      <div class="modal-section-title" style="color:var(--amber)">⛽ Gas Cards</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:4px">
-        <div><div style="font-size:9px;color:var(--fg3);margin-bottom:2px">Used</div><input class="staples-input" id="nr_gasUsed" type="number" inputmode="numeric" value="${rpt.gasUsed||''}" style="font-size:12px;padding:6px 8px"></div>
-        <div><div style="font-size:9px;color:var(--fg3);margin-bottom:2px">Back</div><input class="staples-input" id="nr_gasBack" type="number" inputmode="numeric" value="${rpt.gasBack||''}" style="font-size:12px;padding:6px 8px"></div>
-        <div><div style="font-size:9px;color:var(--fg3);margin-bottom:2px">Total</div><input class="staples-input" id="nr_gasTotal" type="number" inputmode="numeric" value="${rpt.gasTotal||''}" style="font-size:12px;padding:6px 8px"></div>
-      </div>
-    </div>
-
-    <!-- Comments -->
-    <div class="modal-section">
-      <div class="modal-section-title" style="color:var(--fg)">💬 Comments</div>
-      <textarea class="debrief-textarea" id="nr_comments" placeholder="Add comments..." style="min-height:80px;margin-top:4px">${_esc((rpt.comments || []).filter(c=>c&&c.trim()).join('\n'))}</textarea>
-    </div>
-
-    <!-- Permanent Comments -->
-    <div class="modal-section">
-      <div class="modal-section-title" style="color:var(--violet)">📌 Permanent Comments</div>
-      <textarea class="debrief-textarea" id="nr_permComments" placeholder="Permanent notes..." style="min-height:60px;margin-top:4px">${_esc((rpt.permComments || []).filter(c=>c&&c.trim()).join('\n'))}</textarea>
-    </div>
-
-    <!-- Action Buttons -->
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
-      <button class="hdr-btn" onclick="saveNightlyToCloud()" style="flex:1;padding:10px;font-size:12px;color:var(--green);border-color:var(--green)">💾 Save</button>
-      <button class="hdr-btn" onclick="copyNightlyReport()" style="flex:1;padding:10px;font-size:12px;color:var(--blue);border-color:var(--blue)">📋 Copy Report</button>
-    </div>
-
-    <!-- Preview -->
-    <div style="margin-top:10px;background:#050b14;border:1px solid var(--bg3);border-radius:7px;padding:10px">
-      <div style="font-size:9px;font-weight:700;color:#3a5070;text-transform:uppercase;margin-bottom:6px">REPORT PREVIEW</div>
-      <div id="nightlyPreview" style="font-size:10px;color:#a8bfd4;white-space:pre-wrap;line-height:1.6"></div>
-    </div>
-
-    <p style="font-size:8px;color:var(--fg3);text-align:center;margin-top:12px;font-style:italic">Dispatch Radar — By: Andrismar T.</p>
   `;
-  body.innerHTML = html;
-  updateNightlyPreview();
 
-  // Live preview on input
-  ['nr_disp1','nr_disp2','nr_phonesUsed','nr_phonesBack','nr_phonesTotal','nr_phonesRepair','nr_gasUsed','nr_gasBack','nr_gasTotal','nr_comments','nr_permComments'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener('input', updateNightlyPreview);
-  });
-}
-
-function _esc(s) { return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-
-function getNightlyFormData() {
-  return {
-    closingDispatcher1: (document.getElementById('nr_disp1') || {}).value || '',
-    closingDispatcher2: (document.getElementById('nr_disp2') || {}).value || '',
-    phonesUsed: parseInt((document.getElementById('nr_phonesUsed') || {}).value) || 0,
-    phonesBack: parseInt((document.getElementById('nr_phonesBack') || {}).value) || 0,
-    phonesTotal: parseInt((document.getElementById('nr_phonesTotal') || {}).value) || 0,
-    phonesRepair: parseInt((document.getElementById('nr_phonesRepair') || {}).value) || 0,
-    gasUsed: parseInt((document.getElementById('nr_gasUsed') || {}).value) || 0,
-    gasBack: parseInt((document.getElementById('nr_gasBack') || {}).value) || 0,
-    gasTotal: parseInt((document.getElementById('nr_gasTotal') || {}).value) || 0,
-    comments: ((document.getElementById('nr_comments') || {}).value || '').split('\n').filter(l => l.trim()),
-    permComments: ((document.getElementById('nr_permComments') || {}).value || '').split('\n').filter(l => l.trim()),
-    station: nightlyReportData?.station || currentStation,
-    lastDate: nightlyReportData?.lastDate || new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium' }),
-    source: 'mobile',
-    lastUpdated: Date.now()
-  };
-}
-
-function buildNightlyReportText(rpt) {
-  const d = rpt.lastDate || new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' });
-  let t = `🌙 NIGHTLY REPORT — ${rpt.station || currentStation}\n`;
-  t += `Date: ${d}\n\n`;
-  t += `👥 Closing Team: ${rpt.closingDispatcher1 || 'N/A'} · ${rpt.closingDispatcher2 || 'N/A'}\n\n`;
-  t += `📱 Phones:\n`;
-  t += `  • Used: ${rpt.phonesUsed || 0}\n  • Back: ${rpt.phonesBack || 0}\n  • Total: ${rpt.phonesTotal || 0}\n  • In Repair: ${rpt.phonesRepair || 0}\n\n`;
-  t += `⛽ Gas Cards:\n`;
-  t += `  • Used: ${rpt.gasUsed || 0}\n  • Back: ${rpt.gasBack || 0}\n  • Total: ${rpt.gasTotal || 0}\n\n`;
-  if (rpt.comments && rpt.comments.length) {
-    t += `💬 Comments:\n` + rpt.comments.map(c => `  • ${c}`).join('\n') + '\n\n';
+  // Closing team
+  if (rpt.closingDispatcher1 || rpt.closingDispatcher2) {
+    html += `<div class="modal-section">
+      <div class="modal-section-title" style="color:var(--indigo)">👥 Closing Team</div>
+      <div style="font-size:11px;color:var(--fg)">${rpt.closingDispatcher1 || 'N/A'} · ${rpt.closingDispatcher2 || 'N/A'}</div>
+    </div>`;
   }
-  if (rpt.permComments && rpt.permComments.length) {
-    t += `📌 Permanent Comments:\n` + rpt.permComments.map(c => `  • ${c}`).join('\n') + '\n';
+
+  // Phones
+  if (rpt.phonesUsed !== undefined) {
+    html += `<div class="modal-section">
+      <div class="modal-section-title" style="color:var(--blue)">📱 Phones</div>
+      <div style="font-size:10px;color:var(--fg2)">Used: ${rpt.phonesUsed || 0} · Back: ${rpt.phonesBack || 0} · Total: ${rpt.phonesTotal || 0} · In Repair: ${rpt.phonesRepair || 0}</div>
+    </div>`;
   }
-  return t;
-}
 
-function updateNightlyPreview() {
-  const el = document.getElementById('nightlyPreview');
-  if (!el) return;
-  el.textContent = buildNightlyReportText(getNightlyFormData());
-}
-
-async function saveNightlyToCloud() {
-  if (debriefMode !== 'nightly') {
-    // Morning debrief save
-    saveDebriefToCloud();
-    return;
+  // Gas cards
+  if (rpt.gasUsed !== undefined) {
+    html += `<div class="modal-section">
+      <div class="modal-section-title" style="color:var(--amber)">⛽ Gas Cards</div>
+      <div style="font-size:10px;color:var(--fg2)">Used: ${rpt.gasUsed || 0} · Back: ${rpt.gasBack || 0} · Total: ${rpt.gasTotal || 0}</div>
+    </div>`;
   }
-  const rptData = getNightlyFormData();
-  const btn = document.getElementById('debriefSaveBtn');
-  btn.textContent = '⏳ Saving...';
 
-  try {
-    await fetch(cloudUrl + '?action=report&station=global', {
-      method: 'POST', mode: 'cors',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(rptData)
+  // Additional comments
+  if (rpt.comments && rpt.comments.some(c => c && c.trim())) {
+    html += `<div class="modal-section">
+      <div class="modal-section-title" style="color:var(--fg)">💬 Comments</div>`;
+    rpt.comments.filter(c => c && c.trim()).forEach(c => {
+      html += `<div style="font-size:10px;color:var(--fg2);padding:2px 0;border-bottom:1px solid var(--bg3)">${c}</div>`;
     });
-    nightlyReportData = rptData;
-    btn.textContent = '✅ Saved!';
-    showToast('Nightly report saved to cloud');
-    setTimeout(() => { btn.textContent = '💾 Save'; }, 2000);
-  } catch(e) {
-    btn.textContent = '✗ Failed';
-    showToast('Save failed', true);
-    setTimeout(() => { btn.textContent = '💾 Save'; }, 2000);
+    html += '</div>';
   }
-}
 
-function copyNightlyReport() {
-  const text = buildNightlyReportText(getNightlyFormData());
-  navigator.clipboard.writeText(text).then(() => showToast('📋 Report copied!')).catch(() => {
-    const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px';
-    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); showToast('📋 Copied!');
-  });
+  // Permanent comments
+  if (rpt.permComments && rpt.permComments.some(c => c && c.trim())) {
+    html += `<div class="modal-section">
+      <div class="modal-section-title" style="color:var(--violet)">📌 Permanent Comments</div>`;
+    rpt.permComments.filter(c => c && c.trim()).forEach(c => {
+      html += `<div style="font-size:10px;color:var(--fg2);padding:2px 0;border-bottom:1px solid var(--bg3)">${c}</div>`;
+    });
+    html += '</div>';
+  }
+
+  html += `<p style="font-size:8px;color:var(--fg3);text-align:center;margin-top:12px;font-style:italic">Mobile Amazon Radar — By: Andrismar T.</p>`;
+  body.innerHTML = html;
 }
 
 async function saveDebriefToCloud() {
@@ -2786,8 +2069,7 @@ async function saveDebriefToCloud() {
   btn.textContent = '⏳ Saving...';
 
   const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  // V5.0: Use rawText to match desktop debrief format, keep raw for backwards compat
-  const payload = { rawText: text, raw: text, date: nowET.toDateString(), station: currentStation, source: 'mobile' };
+  const payload = { raw: text, date: nowET.toDateString(), station: currentStation, source: 'mobile' };
 
   try {
     await fetch(cloudUrl + '?action=debrief&station=' + currentStation, {
@@ -2837,92 +2119,429 @@ function parseAndShowDebrief(text) {
   el.innerHTML = html;
 }
 
-// V5.0: Show structured summary from desktop-parsed debrief data
-function showDebriefStructuredSummary(data) {
-  const el = document.getElementById('debriefParsed');
-  if (!el) return;
-  let html = el.innerHTML || '';
+// ═══════════════════════
+//  DAILY OPERATIONS REPORT (V21.51)
+// ═══════════════════════
+//
+// Pulls the merged global snapshot from GAS (?action=dailySnapshot&station=global)
+// and renders the same general-view bento layout the desktop has, scaled
+// for mobile (KPI grid stacks to 2 cols, bento sections stack to 1 col).
 
-  // If desktop already parsed attendance, sweepers, etc., show a rich summary
-  if (data.attendance && data.attendance.length > 0 && !html.includes('Attendance')) {
-    html += `<div style="margin-top:8px;padding:8px;background:var(--bg2);border-radius:6px;border:1px solid var(--bg3)">
-      <div style="font-size:10px;font-weight:700;color:var(--green);margin-bottom:4px">✅ Attendance (${data.attendance.length})</div>
-      <div style="font-size:10px;color:var(--fg2)">${data.attendance.join(', ')}</div>
-    </div>`;
-  }
-  if (data.sweepers && data.sweepers.length > 0 && !html.includes('Sweepers')) {
-    html += `<div style="margin-top:4px;padding:8px;background:var(--bg2);border-radius:6px;border:1px solid var(--bg3)">
-      <div style="font-size:10px;font-weight:700;color:var(--orange);margin-bottom:4px">🧹 Sweepers (${data.sweepers.length})</div>
-      <div style="font-size:10px;color:var(--fg2)">${data.sweepers.map(s => s.name || s).join(', ')}</div>
-    </div>`;
-  }
-  if (data.extraPhones && data.extraPhones.length > 0 && !html.includes('Extra Phones')) {
-    html += `<div style="margin-top:4px;padding:8px;background:var(--bg2);border-radius:6px;border:1px solid var(--bg3)">
-      <div style="font-size:10px;font-weight:700;color:#f97316;margin-bottom:4px">📱 Extra Phones (${data.extraPhones.length})</div>
-      <div style="font-size:10px;color:var(--fg2)">${data.extraPhones.map(ep => ep.name || ep).join(', ')}</div>
-    </div>`;
-  }
-  if (data.rescues && data.rescues.length > 0) {
-    html += `<div style="margin-top:4px;padding:8px;background:var(--bg2);border-radius:6px;border:1px solid var(--bg3)">
-      <div style="font-size:10px;font-weight:700;color:var(--amber);margin-bottom:4px">🆘 Rescues (${data.rescues.length})</div>
-      <div style="font-size:10px;color:var(--fg2)">${data.rescues.map(r => (r.helper || '?') + ' → ' + (r.target || '?')).join('<br>')}</div>
-    </div>`;
+async function openReports() {
+  // Show loading state immediately
+  document.getElementById('modalContent').innerHTML = `
+    <div style="text-align:center;padding:40px 12px;">
+      <div style="font-size:24px;margin-bottom:10px;">📊</div>
+      <div style="font-size:14px;font-weight:800;color:var(--green);margin-bottom:6px;">Daily Operations Report</div>
+      <div style="font-size:11px;color:var(--fg3);margin-bottom:18px;">Fetching merged global snapshot…</div>
+      <div style="display:inline-block;width:18px;height:18px;border:2px solid #1e3a5f;border-top-color:var(--green);border-radius:50%;animation:dlySpinM 0.7s linear infinite;"></div>
+    </div>
+    <style>@keyframes dlySpinM { from { transform: rotate(0); } to { transform: rotate(360deg); } }</style>
+  `;
+  document.getElementById('driverModal').classList.add('open');
+
+  // Try to fetch the global merged snapshot from GAS.
+  let snap = null;
+  let fetchErr = null;
+  try {
+    if (cloudUrl) {
+      const resp = await fetch(cloudUrl + '?action=dailySnapshot&station=global');
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && data.kpi) snap = data;
+      }
+    }
+  } catch (e) { fetchErr = e; }
+
+  // Fallback: build a local-only view from current station's live data.
+  if (!snap) {
+    snap = _buildMobileLocalSnapshot();
   }
 
-  el.innerHTML = html;
+  _renderMobileDailyReport(snap, fetchErr);
 }
 
-function openReports() {
-  // Quick fleet summary
+// Local fallback snapshot — if we can't fetch the merged one, render just
+// the current station's data computed inline from the raw fleet data.
+function _buildMobileLocalSnapshot() {
   const raw = getRaw();
-  const act = raw.filter(d => d.state !== 'FINISHED');
-  const done = raw.filter(d => d.state === 'FINISHED' && isActive(d));
-  const onBreak = act.filter(d => d.state === 'ON BREAK');
-  const behind = act.filter(d => d.progressStatus === 'BEHIND' || d.progressStatus === 'AT_RISK');
-  const noBreak = raw.filter(d => d.hasNoBreaks);
+  const drivers = raw.map(d => ({
+    tid: d.id || '', name: d.name || '', route: d.route || '',
+    vehicleId: d.vehicleId || '',
+    delivered: Math.max(0, (d.totalPkgs || 0) - (d.remainingPkgs || 0)),
+    deliverable: Math.max(0, (d.remainingPkgs || 0) - (d.returns || 0) - (d.missing || 0)),
+    returns: d.returns || 0,
+    stopsCompleted: d.stopsCompleted || 0, stopsTotal: d.stopsTotal || 0,
+    state: d.state || '',
+    inspectionDone: !!d.inspectionDone,
+    hasNoBreaks: !!d.hasNoBreaks,
+    isSweeper: !!d.isSweeper, isHelper: !!d.isHelper, isFlexRoute: !!d.isFlexRoute,
+    isStaples: !!d.isStaples,
+    gotGas: !!d.gotGas, gotGasTime: d.gotGasTime || null,
+    departureTime: d._confirmedDepartureTime || null,
+    firstDeliveryTime: d.firstDeliveryTime || null,
+    progressStatus: d.progressStatus || ''
+  }));
+  const active = drivers.filter(d => d.state !== 'FINISHED' && !d.inspectionDone);
+  const finished = drivers.filter(d => d.state === 'FINISHED' || d.inspectionDone);
+  const onTimeCount = drivers.filter(d => d.progressStatus !== 'BEHIND' && d.progressStatus !== 'AT_RISK').length;
+  const onTimePct = drivers.length > 0 ? +((onTimeCount / drivers.length) * 100).toFixed(1) : 100;
+  const noBreakCount = drivers.filter(d => d.hasNoBreaks && !d.isSweeper && !d.isHelper && !d.isFlexRoute).length;
+  const gotGasList = drivers.filter(d => d.gotGas && d.gotGasTime).sort((a, b) => a.gotGasTime - b.gotGasTime);
 
-  let totalStops = 0, totalDone = 0, totalPkgs = 0, totalDeliv = 0;
-  raw.forEach(d => {
-    totalStops += d.stopsTotal || 0;
-    totalDone += d.stopsCompleted || 0;
-    totalPkgs += Math.max(d.totalPkgs || 0, d.remainingPkgs || 0);
-    totalDeliv += Math.max(0, (d.totalPkgs || 0) - (d.remainingPkgs || 0));
-  });
+  return {
+    _ts: Date.now(),
+    _local: true,
+    station: currentStation,
+    lastDate: new Date().toLocaleDateString('en-US'),
+    kpi: {
+      activeCount: active.length, totalCount: drivers.length, finishedCount: finished.length,
+      onTimePct,
+      criticalInactivity: 0, avgPaceMin: null,
+      totalPkgsDelivered: drivers.reduce((s, d) => s + d.delivered, 0),
+      totalStopsCompleted: drivers.reduce((s, d) => s + d.stopsCompleted, 0),
+      totalStops: drivers.reduce((s, d) => s + d.stopsTotal, 0),
+      totalReturns: drivers.reduce((s, d) => s + d.returns, 0),
+      noBreakCount, gotGasCount: gotGasList.length
+    },
+    drivers,
+    bestPace: [], mostReturns: drivers.filter(d => d.returns > 0).sort((a, b) => b.returns - a.returns).slice(0, 5),
+    mostInactive: [], volumeLeaders: drivers.filter(d => d.delivered > 0).sort((a, b) => b.delivered - a.delivered).slice(0, 5),
+    noBreakDrivers: drivers.filter(d => d.hasNoBreaks && !d.isSweeper && !d.isHelper && !d.isFlexRoute),
+    gotGasList,
+    flexRoutes: drivers.filter(d => d.isFlexRoute).map(f => ({ route: f.route, progress: f.stopsTotal > 0 ? Math.round((f.stopsCompleted / f.stopsTotal) * 100) : 0 })),
+    staples: drivers.filter(d => d.isStaples).map(s => ({ name: s.name, route: s.route })),
+    rescues: [], leadSweeper: null, helpingHands: [],
+    events: [],
+    handEntered: {
+      dispatcher1: '', dispatcher2: '',
+      phones: { used: 0, inStation: 0, total: 0 },
+      batteries: { cage: 0, cabinet: 0, total: 0 },
+      gas: { used: 0, back: 0, total: 0 },
+      defects: [], damages: [], safety: {}, giftCards: [], noBreakDAs: [],
+      inspections: [], pendingAVI: [], evsOutside: ''
+    }
+  };
+}
 
-  const html = `
-    <div style="text-align:center;margin-bottom:12px">
-      <div style="font-size:16px;font-weight:800;color:var(--green)">📊 Fleet Summary</div>
-      <div style="font-size:10px;color:var(--fg3)">${currentStation} · ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short' })}</div>
+function _mFmtTime(ms) {
+  if (!ms) return '--';
+  return new Date(ms).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+function _mEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function _renderMobileDailyReport(s, fetchErr) {
+  const k = s.kpi;
+  const he = s.handEntered || {};
+  const isMerged = !s._local;
+
+  const lastSync = new Date(s._ts).toLocaleString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+  // KPI tiles (2-col on mobile)
+  const kpiHtml = `
+    <div class="dly-m-kpi-grid">
+      <div class="dly-m-kpi" style="border-left-color:#22c55e;">
+        <div class="dly-m-kpi-label">Active</div>
+        <div class="dly-m-kpi-val" style="color:#22c55e;">${k.activeCount}<span style="font-size:11px;opacity:0.6;">/${k.totalCount}</span></div>
+      </div>
+      <div class="dly-m-kpi" style="border-left-color:#06b6d4;">
+        <div class="dly-m-kpi-label">On-Time</div>
+        <div class="dly-m-kpi-val" style="color:#06b6d4;">${k.onTimePct}<span style="font-size:11px;opacity:0.6;">%</span></div>
+      </div>
+      <div class="dly-m-kpi" style="border-left-color:#ef4444;">
+        <div class="dly-m-kpi-label">Critical</div>
+        <div class="dly-m-kpi-val" style="color:#ef4444;">${String(k.criticalInactivity || 0).padStart(2, '0')}</div>
+      </div>
+      <div class="dly-m-kpi" style="border-left-color:#f59e0b;">
+        <div class="dly-m-kpi-label">Avg Pace</div>
+        <div class="dly-m-kpi-val" style="color:#f59e0b;">${k.avgPaceMin != null ? k.avgPaceMin : '—'}<span style="font-size:10px;opacity:0.6;">min</span></div>
+      </div>
+      <div class="dly-m-kpi" style="border-left-color:#3b82f6;">
+        <div class="dly-m-kpi-label">Pkgs Delivered</div>
+        <div class="dly-m-kpi-val" style="color:#60a5fa;">${(k.totalPkgsDelivered || 0).toLocaleString()}</div>
+      </div>
+      <div class="dly-m-kpi" style="border-left-color:#a78bfa;">
+        <div class="dly-m-kpi-label">Stops</div>
+        <div class="dly-m-kpi-val" style="color:#a78bfa;font-size:14px;">${(k.totalStopsCompleted || 0).toLocaleString()}<span style="font-size:10px;opacity:0.6;">/${(k.totalStops || 0).toLocaleString()}</span></div>
+      </div>
+      <div class="dly-m-kpi" style="border-left-color:#fbbf24;">
+        <div class="dly-m-kpi-label">⛽ Got Gas</div>
+        <div class="dly-m-kpi-val" style="color:#fbbf24;">${k.gotGasCount || 0}</div>
+      </div>
+      <div class="dly-m-kpi" style="border-left-color:#ef4444;">
+        <div class="dly-m-kpi-label">Returns</div>
+        <div class="dly-m-kpi-val" style="color:#fca5a5;">${k.totalReturns || 0}</div>
+      </div>
     </div>
-    <div class="info-grid">
-      <div class="info-box" style="text-align:center"><span class="label">Active</span><div class="val" style="color:var(--green)">${act.length}</div></div>
-      <div class="info-box" style="text-align:center"><span class="label">Completed</span><div class="val" style="color:var(--blue)">${done.length}</div></div>
-      <div class="info-box" style="text-align:center"><span class="label">On Break</span><div class="val" style="color:#93c5fd">${onBreak.length}</div></div>
-      <div class="info-box" style="text-align:center"><span class="label">Behind</span><div class="val" style="color:var(--red)">${behind.length}</div></div>
-      <div class="info-box" style="text-align:center"><span class="label">No Break</span><div class="val" style="color:var(--amber)">${noBreak.length}</div></div>
-      <div class="info-box" style="text-align:center"><span class="label">Total</span><div class="val">${raw.length}</div></div>
-    </div>
-    <div class="info-grid">
-      <div class="info-box"><span class="label">Total Stops</span><div class="val">${totalStops.toLocaleString()}</div></div>
-      <div class="info-box"><span class="label">Completed Stops</span><div class="val" style="color:var(--green)">${totalDone.toLocaleString()}</div></div>
-      <div class="info-box"><span class="label">Total Pkgs</span><div class="val">${totalPkgs.toLocaleString()}</div></div>
-      <div class="info-box"><span class="label">Delivered Pkgs</span><div class="val" style="color:var(--green)">${totalDeliv.toLocaleString()}</div></div>
-    </div>
-    <button class="hdr-btn" style="width:100%;padding:10px;margin-top:10px" onclick="copyFleetSummary()">📋 Copy Summary</button>
   `;
 
+  // Top pace
+  const paceHtml = (s.bestPace || []).slice(0, 5).map((d, i) =>
+    `<div class="dly-m-rank">
+      <span style="color:#5b7793;width:18px;font-weight:700;font-size:10px;">${i + 1}.</span>
+      <span style="flex:1;color:#dce8f5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_mEsc(d.name)}</span>
+      <span style="color:#22c55e;font-weight:700;">${d.sph}<span style="font-size:9px;opacity:0.6;"> SPH</span></span>
+    </div>`).join('') || '<div class="dly-m-empty">No pace data</div>';
+
+  // Most returns
+  const retHtml = (s.mostReturns || []).slice(0, 5).map(d =>
+    `<div class="dly-m-rank">
+      <span style="flex:1;color:#dce8f5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_mEsc(d.name)}</span>
+      <span style="color:#ef4444;font-weight:700;">${d.returns}<span style="font-size:9px;opacity:0.6;"> PKG</span></span>
+    </div>`).join('') || '<div class="dly-m-empty">No returns</div>';
+
+  // Got gas
+  const gasHtml = (s.gotGasList || []).map(d =>
+    `<div class="dly-m-gas">
+      <span style="color:#f59e0b;">⛽</span>
+      <span style="flex:1;color:#dce8f5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_mEsc(d.name)}</span>
+      <span style="font-size:9px;color:#5b7793;">${_mEsc(d.route)}</span>
+      <span style="color:#fbbf24;font-weight:700;font-size:11px;">${_mFmtTime(d.gotGasTime)}</span>
+    </div>`).join('') || '<div class="dly-m-empty">No fuel events yet</div>';
+
+  // No-break drivers
+  const nbHtml = (s.noBreakDrivers || []).slice(0, 6).map(d =>
+    `<div class="dly-m-rank" style="border-bottom:1px dashed #142235;">
+      <span style="flex:1;color:#dce8f5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_mEsc(d.name)}</span>
+      <span style="color:#f59e0b;font-weight:700;font-size:10px;">${_mEsc(d.route)}</span>
+    </div>`).join('') || '<div class="dly-m-empty">All drivers took breaks ✓</div>';
+
+  // Volume leaders
+  const volHtml = (s.volumeLeaders || []).slice(0, 5).map(d =>
+    `<div class="dly-m-rank">
+      <span style="flex:1;color:#dce8f5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_mEsc(d.name)}</span>
+      <span style="color:#22c55e;font-weight:700;">${d.delivered}<span style="font-size:9px;opacity:0.6;"> PKGS</span></span>
+    </div>`).join('') || '<div class="dly-m-empty">No deliveries yet</div>';
+
+  // Lead sweeper
+  let leadHtml;
+  if (s.leadSweeper) {
+    leadHtml = `<div style="background:#060b16;padding:10px;border-radius:4px;">
+      <div style="font-size:14px;font-weight:800;color:#dce8f5;margin-bottom:6px;">${_mEsc(s.leadSweeper.name)}</div>
+      <div style="display:flex;gap:8px;">
+        <div style="flex:1;background:#0d1729;padding:6px;border-radius:4px;border-left:2px solid #06b6d4;">
+          <div style="font-size:8px;color:#5b7793;text-transform:uppercase;letter-spacing:0.10em;">Rescues</div>
+          <div style="font-size:14px;color:#06b6d4;font-weight:700;">${s.leadSweeper.rescueCount}</div>
+        </div>
+        <div style="flex:1;background:#0d1729;padding:6px;border-radius:4px;border-left:2px solid #06b6d4;">
+          <div style="font-size:8px;color:#5b7793;text-transform:uppercase;letter-spacing:0.10em;">Pace</div>
+          <div style="font-size:14px;color:#06b6d4;font-weight:700;">${s.leadSweeper.sph != null ? s.leadSweeper.sph : '—'}</div>
+        </div>
+      </div>
+      <div style="font-size:10px;color:#5b7793;margin-top:6px;">Route <span style="color:#a78bfa;font-weight:700;">${_mEsc(s.leadSweeper.route)}</span></div>
+    </div>`;
+  } else {
+    leadHtml = '<div class="dly-m-empty">No active sweeper</div>';
+  }
+
+  // Inventory (Gas / Phones / Batt)
+  const invHtml = `
+    <div class="dly-m-inv">
+      <div style="background:#060b16;padding:6px 8px;border-radius:4px;border-left:2px solid #3b82f6;">
+        <div style="font-size:8px;color:#5b7793;text-transform:uppercase;letter-spacing:0.10em;">⛽ Gas</div>
+        <div style="font-size:10px;color:#dce8f5;margin-top:2px;">Used <span style="color:#60a5fa;font-weight:700;">${he.gas?.used || 0}</span></div>
+        <div style="font-size:10px;color:#dce8f5;">Back <span style="color:#60a5fa;font-weight:700;">${he.gas?.back || 0}</span></div>
+      </div>
+      <div style="background:#060b16;padding:6px 8px;border-radius:4px;border-left:2px solid #3b82f6;">
+        <div style="font-size:8px;color:#5b7793;text-transform:uppercase;letter-spacing:0.10em;">📱 Phones</div>
+        <div style="font-size:10px;color:#dce8f5;margin-top:2px;">Used <span style="color:#60a5fa;font-weight:700;">${he.phones?.used || 0}</span></div>
+        <div style="font-size:10px;color:#dce8f5;">Station <span style="color:#60a5fa;font-weight:700;">${he.phones?.inStation || 0}</span></div>
+      </div>
+      <div style="background:#060b16;padding:6px 8px;border-radius:4px;border-left:2px solid #3b82f6;">
+        <div style="font-size:8px;color:#5b7793;text-transform:uppercase;letter-spacing:0.10em;">🔋 Batt</div>
+        <div style="font-size:10px;color:#dce8f5;margin-top:2px;">Cage <span style="color:#60a5fa;font-weight:700;">${he.batteries?.cage || 0}</span></div>
+        <div style="font-size:10px;color:#dce8f5;">Cabinet <span style="color:#60a5fa;font-weight:700;">${he.batteries?.cabinet || 0}</span></div>
+      </div>
+    </div>
+  `;
+
+  // Incidents
+  const defectsCount = (he.defects || []).length;
+  const damagesCount = (he.damages || []).length;
+  const safetyCount = Object.values(he.safety || {}).reduce((s2, arr) => s2 + (arr || []).length, 0);
+  const giftCardsCount = (he.giftCards || []).length;
+  const inspCount = (he.inspections || []).length;
+  const pendingAVICount = (he.pendingAVI || []).length;
+
+  const incidentsHtml = `
+    <div class="dly-m-inv">
+      <div style="background:#060b16;padding:6px;border-radius:4px;border-left:2px solid ${defectsCount > 0 ? '#ef4444' : '#253447'};">
+        <div style="font-size:8px;color:#5b7793;text-transform:uppercase;letter-spacing:0.10em;">Defects</div>
+        <div style="font-size:14px;color:${defectsCount > 0 ? '#ef4444' : '#5b7793'};font-weight:800;">${defectsCount}</div>
+      </div>
+      <div style="background:#060b16;padding:6px;border-radius:4px;border-left:2px solid ${damagesCount > 0 ? '#ef4444' : '#253447'};">
+        <div style="font-size:8px;color:#5b7793;text-transform:uppercase;letter-spacing:0.10em;">Damages</div>
+        <div style="font-size:14px;color:${damagesCount > 0 ? '#ef4444' : '#5b7793'};font-weight:800;">${damagesCount}</div>
+      </div>
+      <div style="background:#060b16;padding:6px;border-radius:4px;border-left:2px solid ${safetyCount > 0 ? '#f59e0b' : '#253447'};">
+        <div style="font-size:8px;color:#5b7793;text-transform:uppercase;letter-spacing:0.10em;">Safety</div>
+        <div style="font-size:14px;color:${safetyCount > 0 ? '#f59e0b' : '#5b7793'};font-weight:800;">${safetyCount}</div>
+      </div>
+      <div style="background:#060b16;padding:6px;border-radius:4px;border-left:2px solid ${pendingAVICount > 0 ? '#f59e0b' : '#253447'};">
+        <div style="font-size:8px;color:#5b7793;text-transform:uppercase;letter-spacing:0.10em;">Pend AVI</div>
+        <div style="font-size:14px;color:${pendingAVICount > 0 ? '#f59e0b' : '#5b7793'};font-weight:800;">${pendingAVICount}</div>
+      </div>
+      <div style="background:#060b16;padding:6px;border-radius:4px;border-left:2px solid ${inspCount > 0 ? '#22c55e' : '#253447'};">
+        <div style="font-size:8px;color:#5b7793;text-transform:uppercase;letter-spacing:0.10em;">Inspect</div>
+        <div style="font-size:14px;color:${inspCount > 0 ? '#22c55e' : '#5b7793'};font-weight:800;">${inspCount}</div>
+      </div>
+      <div style="background:#060b16;padding:6px;border-radius:4px;border-left:2px solid ${giftCardsCount > 0 ? '#a78bfa' : '#253447'};">
+        <div style="font-size:8px;color:#5b7793;text-transform:uppercase;letter-spacing:0.10em;">Gift Card</div>
+        <div style="font-size:14px;color:${giftCardsCount > 0 ? '#a78bfa' : '#5b7793'};font-weight:800;">${giftCardsCount}</div>
+      </div>
+    </div>
+  `;
+
+  // Build full HTML
+  const html = `
+    <style>
+      @keyframes dlyMPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.5); } 50% { box-shadow: 0 0 0 4px rgba(34,197,94,0); } }
+      .dly-m-eyebrow {
+        font-size: 9px; color: #22c55e; letter-spacing: 0.18em;
+        text-transform: uppercase; font-weight: 700;
+        display: flex; align-items: center; gap: 5px; margin-bottom: 2px;
+      }
+      .dly-m-pulse-dot {
+        width: 6px; height: 6px; border-radius: 50%; background: #22c55e;
+        animation: dlyMPulse 1.6s ease-in-out infinite;
+      }
+      .dly-m-title { font-size: 18px; font-weight: 800; color: #dce8f5; letter-spacing: -0.01em; }
+      .dly-m-title-tag { font-size: 11px; color: #5b7793; font-weight: 400; margin-left: 4px; }
+      .dly-m-meta { font-size: 9px; color: #6b7d92; margin: 4px 0 12px; }
+      .dly-m-meta b { color: #93c5fd; font-weight: 600; }
+      .dly-m-kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
+      .dly-m-kpi {
+        background: linear-gradient(180deg, #0d1729 0%, #0a111e 100%);
+        border-left: 3px solid #22c55e;
+        padding: 8px 10px; border-radius: 0 5px 5px 0;
+      }
+      .dly-m-kpi-label {
+        font-size: 8px; text-transform: uppercase; letter-spacing: 0.10em;
+        color: #5b7793; font-weight: 700; margin-bottom: 3px;
+      }
+      .dly-m-kpi-val {
+        font-size: 18px; font-weight: 800; letter-spacing: -0.02em; line-height: 1;
+      }
+      .dly-m-section {
+        background: #0d1729; border: 1px solid #1e3a5f; border-radius: 6px;
+        padding: 8px 10px; margin-bottom: 8px;
+      }
+      .dly-m-section-title {
+        font-size: 9px; font-weight: 800; text-transform: uppercase;
+        color: #93c5fd; letter-spacing: 0.10em; margin-bottom: 6px;
+        padding-bottom: 4px; border-bottom: 1px solid #1e3a5f;
+        display: flex; align-items: center; justify-content: space-between;
+      }
+      .dly-m-rank {
+        display: flex; align-items: center; gap: 6px; padding: 3px 0;
+        font-size: 11px; border-bottom: 1px dashed #142235;
+      }
+      .dly-m-rank:last-child { border-bottom: none; }
+      .dly-m-gas {
+        display: flex; align-items: center; gap: 6px;
+        padding: 4px 6px; background: #060b16;
+        border-radius: 4px; border-left: 2px solid #f59e0b;
+        margin-bottom: 3px; font-size: 11px;
+      }
+      .dly-m-empty {
+        font-size: 11px; color: #5b7793; padding: 8px 0;
+        text-align: center; font-style: italic;
+      }
+      .dly-m-inv {
+        display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px;
+      }
+    </style>
+    <div style="margin-bottom:10px;">
+      <div class="dly-m-eyebrow"><span class="dly-m-pulse-dot"></span>Live Operations Monitor</div>
+      <div class="dly-m-title">Daily Report <span class="dly-m-title-tag">v21.51</span></div>
+      <div class="dly-m-meta">
+        <b>${_mEsc(s.station || 'global')}</b> · <b>${_mEsc(s.lastDate)}</b> · ${k.activeCount}/${k.totalCount} active
+        ${isMerged ? ' · <span style="color:#22c55e;">merged ☁</span>' : ' · <span style="color:#f59e0b;">local only</span>'}
+        ${fetchErr ? ' · <span style="color:#ef4444;">cloud err</span>' : ''}
+      </div>
+    </div>
+    ${kpiHtml}
+
+    <div class="dly-m-section">
+      <div class="dly-m-section-title"><span>⚡ Best Pace</span><span style="color:#5b7793;">Top ${Math.min(5, (s.bestPace || []).length)}</span></div>
+      ${paceHtml}
+    </div>
+
+    <div class="dly-m-section">
+      <div class="dly-m-section-title"><span>🧹 Lead Sweeper</span></div>
+      ${leadHtml}
+    </div>
+
+    <div class="dly-m-section">
+      <div class="dly-m-section-title"><span>⛽ Got Gas Log</span><span style="color:#5b7793;">${(s.gotGasList || []).length}</span></div>
+      ${gasHtml}
+    </div>
+
+    <div class="dly-m-section">
+      <div class="dly-m-section-title"><span style="color:#ef4444;">⚠ Most Returns</span></div>
+      ${retHtml}
+    </div>
+
+    <div class="dly-m-section">
+      <div class="dly-m-section-title"><span>📦 Volume Leaders</span></div>
+      ${volHtml}
+    </div>
+
+    <div class="dly-m-section">
+      <div class="dly-m-section-title"><span>☕ No-Break Drivers</span><span style="color:#fca5a5;">${(s.noBreakDrivers || []).length}</span></div>
+      ${nbHtml}
+    </div>
+
+    <div class="dly-m-section">
+      <div class="dly-m-section-title"><span>📋 Station Inventory</span></div>
+      ${invHtml}
+    </div>
+
+    <div class="dly-m-section">
+      <div class="dly-m-section-title"><span style="color:#ef4444;">🚨 Incidents & Inspections</span></div>
+      ${incidentsHtml}
+    </div>
+
+    <div style="display:flex;gap:6px;margin-top:10px;">
+      <button class="hdr-btn" style="flex:1;padding:10px;" onclick="openReports()">🔄 Refresh</button>
+      <button class="hdr-btn" style="flex:1;padding:10px;" onclick="copyDailyReportSummary()">📋 Copy</button>
+    </div>
+    <div style="text-align:center;font-size:9px;color:#5b7793;margin-top:8px;">
+      Updated ${lastSync} · ${isMerged ? 'merged across all stations' : 'this station only'}
+    </div>
+  `;
+
+  // Stash the snap on window so the copy button can read it
+  window._mobileLastSnap = s;
   document.getElementById('modalContent').innerHTML = html;
-  document.getElementById('driverModal').classList.add('open');
+}
+
+function copyDailyReportSummary() {
+  const s = window._mobileLastSnap;
+  if (!s) { showToast('No data yet', true); return; }
+  const lines = [];
+  lines.push(`Daily Operations Report — ${s.station} — ${s.lastDate}`);
+  lines.push(`Generated: ${new Date(s._ts).toLocaleString()}`);
+  lines.push('');
+  lines.push(`Active: ${s.kpi.activeCount}/${s.kpi.totalCount} · Finished: ${s.kpi.finishedCount}`);
+  lines.push(`On-Time: ${s.kpi.onTimePct}% · Critical: ${s.kpi.criticalInactivity || 0}`);
+  lines.push(`Pkgs: ${(s.kpi.totalPkgsDelivered || 0).toLocaleString()} · Returns: ${s.kpi.totalReturns}`);
+  lines.push(`Stops: ${(s.kpi.totalStopsCompleted || 0).toLocaleString()}/${(s.kpi.totalStops || 0).toLocaleString()}`);
+  lines.push(`⛽ Got Gas: ${s.kpi.gotGasCount} · ☕ No-Break: ${s.kpi.noBreakCount}`);
+  if (s.leadSweeper) lines.push(`Lead Sweeper: ${s.leadSweeper.name} (${s.leadSweeper.rescueCount} rescues)`);
+  lines.push('');
+  lines.push('— GOT GAS —');
+  (s.gotGasList || []).forEach(d => lines.push(`  ${_mFmtTime(d.gotGasTime)} · ${d.name} (${d.route})`));
+  if (!(s.gotGasList || []).length) lines.push('  (none)');
+  navigator.clipboard.writeText(lines.join('\n')).then(() => showToast('Copied!')).catch(() => showToast('Copy failed', true));
 }
 
 function copyFleetSummary() {
-  const raw = getRaw();
-  const act = raw.filter(d => d.state !== 'FINISHED');
-  const done = raw.filter(d => d.state === 'FINISHED' && isActive(d));
-  let text = `Fleet Summary — ${currentStation}\n`;
-  text += `Active: ${act.length} | Done: ${done.length} | Total: ${raw.length}\n`;
-  text += `Behind: ${raw.filter(d => d.progressStatus === 'BEHIND' || d.progressStatus === 'AT_RISK').length}\n`;
-  navigator.clipboard.writeText(text).then(() => showToast('Copied!')).catch(() => showToast('Copy failed', true));
+  // Back-compat: keep old name as alias
+  copyDailyReportSummary();
 }
 
 function openExport() {
@@ -2938,7 +2557,7 @@ let staplesData = { itinerary: '', scanned: '', totalReturns: '', manager: '' };
 async function openStaples() {
   document.getElementById('staplesOverlay').classList.add('open');
   try {
-    const resp = await fetch(_cb(cloudUrl + '?action=staples&station=' + currentStation));
+    const resp = await fetch(cloudUrl + '?action=staples&station=' + currentStation);
     const data = await resp.json();
     if (data && data.itinerary !== undefined) staplesData = data;
   } catch (e) {}
@@ -3049,7 +2668,7 @@ function openSettings() {
       <button class="hdr-btn" style="width:100%;padding:10px;color:var(--red);border-color:var(--red)" onclick="if(confirm('Clear all local data and reset?')){localStorage.clear();sessionStorage.clear();location.reload()}">Reset Everything</button>
     </div>
     <div style="text-align:center;color:var(--fg3);font-size:10px;margin-top:20px">
-      <div>Dispatch Radar V${MOBILE_VERSION}</div>
+      <div>Mobile Amazon Radar V4.1 · Daily Report v21.51</div>
       <div style="font-style:italic">By: Andrismar T.</div>
     </div>
   `;
@@ -3095,26 +2714,11 @@ setInterval(() => {
     const ago = Math.round((Date.now() - lastFetch) / 1000);
     const label = document.getElementById('syncLabel');
     if (!label) return;
-    // V5.2: Smart freshness — use best available timestamp
-    const pushTs = memory._cloudPushTs || null;
-    const fileTs = memory._fileModified || null;
-    const bestTs = Math.max(pushTs || 0, fileTs || 0, memory.lastUpdated || 0);
-    const dataAge = bestTs ? Date.now() - bestTs : null;
-    const isStale = dataAge && dataAge > 120000;
-    const dataAgeStr = dataAge ? formatDataAge(dataAge) : '';
-    if (isStale) {
-      label.innerHTML = '⚠ Data is <b style="color:var(--amber)">' + dataAgeStr + ' old</b> — desktop may not be pushing';
-      label.style.color = 'var(--amber)';
-      const dot = document.getElementById('syncDot');
-      if (dot) { dot.className = 'sync-dot err'; }
-    } else {
-      if (ago < 5) label.textContent = '● Synced just now' + (dataAgeStr ? ' · Data: ' + dataAgeStr : '');
-      else if (ago < 60) label.textContent = `● Synced ${ago}s ago` + (dataAgeStr ? ' · Data: ' + dataAgeStr : '');
-      else label.textContent = `● Synced ${Math.floor(ago / 60)}m ago` + (dataAgeStr ? ' · Data: ' + dataAgeStr : '');
-      label.style.color = '';
-      const dot = document.getElementById('syncDot');
-      if (dot) dot.classList.toggle('live', ago < REFRESH_MS / 1000);
-    }
+    if (ago < 5) label.textContent = '● Synced just now';
+    else if (ago < 60) label.textContent = `● Synced ${ago}s ago`;
+    else label.textContent = `● Synced ${Math.floor(ago / 60)}m ago`;
+    const dot = document.getElementById('syncDot');
+    if (dot) dot.classList.toggle('live', ago < REFRESH_MS / 1000);
   }
 }, 1000);
 
