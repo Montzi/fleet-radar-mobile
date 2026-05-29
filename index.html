@@ -2257,7 +2257,7 @@ function _renderMobileDailyReport(s, fetchErr) {
       </div>
       <div class="dly-m-kpi" style="border-left-color:#f59e0b;">
         <div class="dly-m-kpi-label">Avg Pace</div>
-        <div class="dly-m-kpi-val" style="color:#f59e0b;">${k.avgPaceMin != null ? k.avgPaceMin : '—'}<span style="font-size:10px;opacity:0.6;">min</span></div>
+        <div class="dly-m-kpi-val" style="color:#f59e0b;">${k.avgPaceSPH != null ? k.avgPaceSPH : (k.avgPaceMin != null ? k.avgPaceMin : '—')}<span style="font-size:10px;opacity:0.6;"> Per HR</span></div>
       </div>
       <div class="dly-m-kpi" style="border-left-color:#3b82f6;">
         <div class="dly-m-kpi-label">Pkgs Delivered</div>
@@ -2279,12 +2279,53 @@ function _renderMobileDailyReport(s, fetchErr) {
   `;
 
   // Top pace
-  const paceHtml = (s.bestPace || []).slice(0, 5).map((d, i) =>
+  const paceHtml = (s.bestPace || []).slice(0, 10).map((d, i) =>
     `<div class="dly-m-rank">
       <span style="color:#5b7793;width:18px;font-weight:700;font-size:10px;">${i + 1}.</span>
       <span style="flex:1;color:#dce8f5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_mEsc(d.name)}</span>
-      <span style="color:#22c55e;font-weight:700;">${d.sph}<span style="font-size:9px;opacity:0.6;"> SPH</span></span>
+      <span style="color:#22c55e;font-weight:700;">${d.sph}<span style="font-size:9px;opacity:0.6;"> Per HR</span></span>
     </div>`).join('') || '<div class="dly-m-empty">No pace data</div>';
+
+  // V23: Worst pace (10)
+  const worstPaceHtml = (s.worstPace || []).slice(0, 10).map((d, i) =>
+    `<div class="dly-m-rank">
+      <span style="color:#5b7793;width:18px;font-weight:700;font-size:10px;">${i + 1}.</span>
+      <span style="flex:1;color:#dce8f5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_mEsc(d.name)}</span>
+      <span style="color:#ef4444;font-weight:700;">${d.sph}<span style="font-size:9px;opacity:0.6;"> Per HR</span></span>
+    </div>`).join('') || '<div class="dly-m-empty">No pace data</div>';
+
+  // V23: Helpers — show helped driver(s), no stop totals, only pairings over 3 stops
+  const helpersHtml = (() => {
+    const items = (s.helpingHands || []).map(h => {
+      const pairs = (h.helpedPairs || []).filter(p => (p.stops || 0) > 3);
+      let helped = '';
+      if (pairs.length) helped = pairs.map(p => _mEsc(p.rescued)).join(', ');
+      else if ((h.totalStopsHelped || 0) > 3 && h.helping && h.helping !== '(auto-detected)') helped = _mEsc(h.helping);
+      else return '';
+      return `<div class="dly-m-rank">
+        <span style="flex:1;color:#dce8f5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;">${_mEsc(h.name)}</span>
+        <span style="color:#5b7793;">→</span>
+        <span style="flex:1;color:#60a5fa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;">${helped}</span>
+      </div>`;
+    }).filter(Boolean).join('');
+    return items || '<div class="dly-m-empty">No helpers over 3 stops</div>';
+  })();
+
+  // V23: Safety events list (de-duplicated)
+  const safetyHtml = (() => {
+    const seen = {};
+    const list = (s.safetyEventsList || []).filter(ev => {
+      const key = ev.eventId ? 'id:' + ev.eventId
+        : ((ev.driver || '').toLowerCase().trim() + '|' + (ev.category || '') + '|' + (ev.description || '') + '|' + (ev.time || ''));
+      if (seen[key]) return false; seen[key] = true; return true;
+    });
+    if (!list.length) return '<div class="dly-m-empty">No safety events</div>';
+    return list.map(ev =>
+      `<div class="dly-m-rank">
+        <span style="flex:1;color:#dce8f5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_mEsc(ev.driver)}</span>
+        <span style="color:#fb7185;font-size:10px;text-align:right;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_mEsc(ev.category)}${ev.description ? ' — ' + _mEsc(ev.description) : ''}</span>
+      </div>`).join('');
+  })();
 
   // Most returns
   const retHtml = (s.mostReturns || []).slice(0, 5).map(d =>
@@ -2319,19 +2360,31 @@ function _renderMobileDailyReport(s, fetchErr) {
   // Lead sweeper
   let leadHtml;
   if (s.leadSweeper) {
+    const lsw = s.leadSweeper;
+    const sweptRoutesHtml = (lsw.sweptRoutes && lsw.sweptRoutes.length)
+      ? `<div style="font-size:10px;color:#5b7793;margin-top:6px;">Swept Routes <span style="color:#a78bfa;font-weight:700;">${lsw.sweptRoutes.map(r => _mEsc(r)).join(', ')}</span></div>`
+      : '';
+    const helpedSrc = (lsw.helpedDrivers && lsw.helpedDrivers.length)
+      ? lsw.helpedDrivers
+      : ((s.sweeperHelped || []).find(sw => sw.name === lsw.name)?.helpedPairs || []);
+    const helpedHtml = helpedSrc.length
+      ? helpedSrc.map(p => `<div style="font-size:10px;color:#93c5fd;margin-top:2px;">↳ Helped <b>${_mEsc(p.rescued)}</b>${p.stops ? ' — ' + p.stops + ' stop' + (p.stops !== 1 ? 's' : '') : ''}</div>`).join('')
+      : '';
     leadHtml = `<div style="background:#060b16;padding:10px;border-radius:4px;">
-      <div style="font-size:14px;font-weight:800;color:#dce8f5;margin-bottom:6px;">${_mEsc(s.leadSweeper.name)}</div>
+      <div style="font-size:14px;font-weight:800;color:#dce8f5;margin-bottom:6px;">${_mEsc(lsw.name)}</div>
       <div style="display:flex;gap:8px;">
         <div style="flex:1;background:#0d1729;padding:6px;border-radius:4px;border-left:2px solid #06b6d4;">
           <div style="font-size:8px;color:#5b7793;text-transform:uppercase;letter-spacing:0.10em;">Rescues</div>
-          <div style="font-size:14px;color:#06b6d4;font-weight:700;">${s.leadSweeper.rescueCount}</div>
+          <div style="font-size:14px;color:#06b6d4;font-weight:700;">${lsw.rescueCount}</div>
         </div>
         <div style="flex:1;background:#0d1729;padding:6px;border-radius:4px;border-left:2px solid #06b6d4;">
-          <div style="font-size:8px;color:#5b7793;text-transform:uppercase;letter-spacing:0.10em;">Pace</div>
-          <div style="font-size:14px;color:#06b6d4;font-weight:700;">${s.leadSweeper.sph != null ? s.leadSweeper.sph : '—'}</div>
+          <div style="font-size:8px;color:#5b7793;text-transform:uppercase;letter-spacing:0.10em;">Pace Per HR</div>
+          <div style="font-size:14px;color:#06b6d4;font-weight:700;">${lsw.sph != null ? lsw.sph : '—'}</div>
         </div>
       </div>
-      <div style="font-size:10px;color:#5b7793;margin-top:6px;">Route <span style="color:#a78bfa;font-weight:700;">${_mEsc(s.leadSweeper.route)}</span></div>
+      <div style="font-size:10px;color:#5b7793;margin-top:6px;">Route <span style="color:#a78bfa;font-weight:700;">${_mEsc(lsw.route)}</span></div>
+      ${sweptRoutesHtml}
+      ${helpedHtml}
     </div>`;
   } else {
     leadHtml = '<div class="dly-m-empty">No active sweeper</div>';
@@ -2395,6 +2448,25 @@ function _renderMobileDailyReport(s, fetchErr) {
     </div>
   `;
 
+  // V23: Compact Driver Detail (vehicle, delivered, AVI time, inspection time)
+  const detailHtml = (s.drivers || []).length ? (s.drivers || []).map(d => {
+    const badges = (d.isSweeper ? '🧹' : '') + (d.isHelper ? '🤝' : '') + (d.isFlexRoute ? '⚡' : '');
+    const stCol = d.state === 'FINISHED' ? '#22c55e' : (d.state === 'ON BREAK' ? '#f59e0b' : '#93c5fd');
+    return `<div style="border-bottom:1px solid #142235;padding:5px 0;font-size:11px;">
+      <div style="display:flex;gap:6px;align-items:center;">
+        <span style="color:#a78bfa;font-weight:700;min-width:46px;">${_mEsc(d.route || '—')}</span>
+        <span style="flex:1;color:#dce8f5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_mEsc(d.name)}${badges}</span>
+        <span style="color:${stCol};font-weight:700;font-size:9px;">${_mEsc(d.state || 'ACTIVE')}</span>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:2px;font-size:9px;color:#5b7793;">
+        <span>🚐 ${_mEsc(d.vehicleId || '—')}</span>
+        <span style="color:#22c55e;">📦 ${d.delivered || 0}</span>
+        <span>AVI ${_mFmtTime(d.aviTime)}</span>
+        <span>Insp ${_mFmtTime(d.inspTime || d.inspectionDoneTime)}</span>
+      </div>
+    </div>`;
+  }).join('') : '<div class="dly-m-empty">No drivers</div>';
+
   // Build full HTML
   const html = `
     <style>
@@ -2456,7 +2528,7 @@ function _renderMobileDailyReport(s, fetchErr) {
     </style>
     <div style="margin-bottom:10px;">
       <div class="dly-m-eyebrow"><span class="dly-m-pulse-dot"></span>Live Operations Monitor</div>
-      <div class="dly-m-title">Daily Report <span class="dly-m-title-tag">v21.51</span></div>
+      <div class="dly-m-title">Daily Report <span class="dly-m-title-tag">v23</span></div>
       <div class="dly-m-meta">
         <b>${_mEsc(s.station || 'global')}</b> · <b>${_mEsc(s.lastDate)}</b> · ${k.activeCount}/${k.totalCount} active
         ${isMerged ? ' · <span style="color:#22c55e;">merged ☁</span>' : ' · <span style="color:#f59e0b;">local only</span>'}
@@ -2466,13 +2538,23 @@ function _renderMobileDailyReport(s, fetchErr) {
     ${kpiHtml}
 
     <div class="dly-m-section">
-      <div class="dly-m-section-title"><span>⚡ Best Pace</span><span style="color:#5b7793;">Top ${Math.min(5, (s.bestPace || []).length)}</span></div>
+      <div class="dly-m-section-title"><span>⚡ Best Pace (Stops)</span><span style="color:#5b7793;">Top ${Math.min(10, (s.bestPace || []).length)}</span></div>
       ${paceHtml}
     </div>
 
     <div class="dly-m-section">
-      <div class="dly-m-section-title"><span>🧹 Lead Sweeper</span></div>
+      <div class="dly-m-section-title"><span style="color:#ef4444;">🐢 Worst Pace (Stops)</span><span style="color:#5b7793;">Top ${Math.min(10, (s.worstPace || []).length)}</span></div>
+      ${worstPaceHtml}
+    </div>
+
+    <div class="dly-m-section">
+      <div class="dly-m-section-title"><span>🧹 Sweeper</span></div>
       ${leadHtml}
+    </div>
+
+    <div class="dly-m-section">
+      <div class="dly-m-section-title"><span>🤝 Helpers</span></div>
+      ${helpersHtml}
     </div>
 
     <div class="dly-m-section">
@@ -2503,6 +2585,16 @@ function _renderMobileDailyReport(s, fetchErr) {
     <div class="dly-m-section">
       <div class="dly-m-section-title"><span style="color:#ef4444;">🚨 Incidents & Inspections</span></div>
       ${incidentsHtml}
+    </div>
+
+    <div class="dly-m-section">
+      <div class="dly-m-section-title"><span style="color:#fb7185;">🚨 Safety Events</span><span style="color:#5b7793;">${(s.safetyEventsList || []).length}</span></div>
+      ${safetyHtml}
+    </div>
+
+    <div class="dly-m-section">
+      <div class="dly-m-section-title"><span>📋 Driver Detail</span><span style="color:#5b7793;">${(s.drivers || []).length}</span></div>
+      ${detailHtml}
     </div>
 
     <div style="display:flex;gap:6px;margin-top:10px;">
