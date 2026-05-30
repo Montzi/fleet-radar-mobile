@@ -1,4 +1,16 @@
 <!DOCTYPE html>
+<!--
+  Mobile Amazon Radar — viewer (A2)
+  v23 + v24 patch (KEEP-LAST-GOOD ANTI-FLICKER):
+  - FIXED: viewer flickered to "No data" between good pulls. GAS pullMemoryFresh
+    returns {drivers:{}, _empty:true} for an empty/absent station file, and {} is
+    truthy, so the old `if (data.drivers)` adopted it and re-rendered blank on
+    every transient empty pull. Now the fetch only adopts + re-renders when the
+    pull actually contains driver data; an empty/blip pull for a station we
+    already have data for is ignored — the last good list stays on screen and the
+    status shows "● N drv · last update Xm ago" (new 'stale' status). Mirrors
+    A1R V21.59R3 / A1 V21.59.3. (Pull already used the POST CDN-bypass.)
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -843,6 +855,9 @@ const LS_NOTIFY = 'dispatch_radar_notify';
 let cloudUrl = CLOUD_URL || localStorage.getItem(LS_URL) || '';
 let currentStation = localStorage.getItem(LS_STA) || 'DJE5';
 let memory = {};
+// v24: keep-last-good anti-flicker — track the last pull that had real driver data
+let _lastGoodStation = null;
+let _lastGoodTs = 0;
 let driverInfoMap = {};
 let lastFetch = 0;
 let refreshTimer = null;
@@ -999,9 +1014,19 @@ async function fetchData() {
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
-    if (data && data.drivers) {
+    // v24 KEEP-LAST-GOOD: pullMemoryFresh returns {drivers:{}, _empty:true} for an
+    // empty/absent station file, and {} is truthy — so the old `if (data.drivers)`
+    // adopted it and re-rendered blank on every blip, causing the viewer to flicker
+    // empty between good pulls. Only adopt when the pull actually has driver data.
+    const _drvCount = (data && data.drivers && typeof data.drivers === 'object')
+      ? Object.keys(data.drivers).length : -1;
+    const _hasData = _drvCount > 0 || (data && (data._cloudPushTs || data.lastUpdated));
+
+    if (_hasData) {
       memory = data;
       lastFetch = Date.now();
+      _lastGoodStation = currentStation;
+      _lastGoodTs = Date.now();
       // V3.2: Log diagnostic metadata for freshness tracing
       if (data._servedAt && data._fileModified) {
         const serveLag = data._servedAt - data._fileModified;
@@ -1010,7 +1035,19 @@ async function fetchData() {
       setSyncStatus('live');
       render();
     } else {
-      setSyncStatus('empty');
+      // Empty/blip pull. If we already have good data for THIS station, keep it on
+      // screen instead of wiping to blank — just note we're waiting on a fresh push.
+      const _curCount = (memory && memory.drivers) ? Object.keys(memory.drivers).length : 0;
+      if (_lastGoodStation === currentStation && _curCount > 0) {
+        const _agoMin = Math.round((Date.now() - (_lastGoodTs || Date.now())) / 60000);
+        setSyncStatus('stale', _agoMin > 0 ? (_agoMin + 'm ago') : '<1m ago');
+        // do NOT overwrite memory or re-render — last good list stays put
+      } else {
+        // Nothing to preserve (never synced this session / just switched stations).
+        memory = (data && typeof data === 'object') ? data : { drivers: {} };
+        setSyncStatus('empty');
+        render();
+      }
     }
   } catch (e) {
     console.error('[Radar] Fetch error:', e);
@@ -1102,6 +1139,12 @@ function setSyncStatus(status, detail) {
     label.textContent = '✗ ' + (detail || 'Offline');
   } else if (status === 'empty') {
     label.textContent = '⚠ No data for ' + currentStation;
+  } else if (status === 'stale') {
+    // v24: showing last good data while waiting on a fresh push (anti-flicker)
+    dot.classList.add('live');
+    const _cnt = (memory && memory.drivers) ? Object.keys(memory.drivers).length : 0;
+    label.textContent = '● ' + _cnt + ' drv · last update ' + (detail || 'just now');
+    document.getElementById('syncBtn').classList.add('synced');
   }
 }
 
