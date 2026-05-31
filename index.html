@@ -557,6 +557,22 @@ html, body {
   background: var(--indigo); color: #fff;
 }
 
+/* ── v24: Nightly report editor ── */
+.rpt-row { display:flex; align-items:center; gap:8px; margin:4px 0; }
+.rpt-row label { font-size:11px; color:var(--fg2); flex:0 0 42%; }
+.rpt-row input { flex:1; background:var(--bg2); border:1px solid var(--bg3); color:var(--fg);
+  border-radius:6px; padding:6px 8px; font-size:12px; min-width:0; }
+.rpt-ta { width:100%; box-sizing:border-box; background:var(--bg2); border:1px solid var(--bg3);
+  color:var(--fg); border-radius:6px; padding:6px 8px; font-size:12px; margin:3px 0; resize:vertical; }
+.rpt-litem { display:flex; align-items:center; gap:6px; margin:3px 0; }
+.rpt-litem input { background:var(--bg2); border:1px solid var(--bg3); color:var(--fg);
+  border-radius:6px; padding:5px 7px; font-size:11px; min-width:0; }
+.rpt-add { font-size:10px; font-weight:700; color:var(--indigo); background:none; border:1px solid var(--bg3);
+  border-radius:5px; padding:1px 7px; margin-left:6px; cursor:pointer; }
+.rpt-del { font-size:11px; color:#ef4444; background:none; border:none; cursor:pointer; padding:2px 4px; flex:0 0 auto; }
+.rpt-save-btn { background:var(--indigo); color:#fff; border:none; border-radius:8px;
+  padding:10px 28px; font-size:14px; font-weight:800; cursor:pointer; }
+
 /* ── Staples overlay ── */
 .staples-overlay {
   position: fixed; inset: 0; z-index: 160;
@@ -844,7 +860,7 @@ html, body {
 
 // ── Configuration ──
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyh90Qa9FuE_tHyZ9T-rQyOOtwFeZxVt-4iUB_LOtyoupoBU8xp-xPUKCXF1EJrjzPCPQ/exec';
-const STATIONS = ['DJE5', 'DJZ6', 'DYY6', 'DNJ4'];
+const STATIONS = ['DJE5', 'DJZ6', 'DJZ8', 'DYY6', 'DJE1', 'DNK7', 'DEW5', 'DNK2', 'DNJ4']; // v24: full canonical list (was 4)
 const REFRESH_MS = 30000;
 const LS_URL = 'dispatch_radar_url';
 const LS_STA = 'dispatch_radar_station';
@@ -1056,6 +1072,38 @@ async function fetchData() {
   }
 
   isRefreshing = false;
+}
+
+// v24: Safety events with cloud→live-API fallback.
+// 1) Try the safety broadcast embedded in the cloud memory (A4 → A1 → cloud).
+// 2) If empty, try the live same-origin Safety API (works only when this PWA is
+//    served from / running on logistics.amazon.com; otherwise CORS blocks it and
+//    we return [] with a console note — no silent failure).
+async function fetchSafetyEventsWithFallback() {
+  // Source 1: broadcast carried in the station memory we already pulled.
+  try {
+    if (memory && memory._safetyBroadcast && Array.isArray(memory._safetyBroadcast.events) && memory._safetyBroadcast.events.length) {
+      return memory._safetyBroadcast.events;
+    }
+  } catch (_) {}
+  // Source 2: live API (same-origin only).
+  try {
+    const d = new Date().toISOString().slice(0, 10);
+    const dspId = 'd120e834-2301-4742-a802-8fc13539d341';
+    const url = 'https://logistics.amazon.com/performance/api/v1/getData'
+      + '?dataSetId=dsp_station_daily_safety_oss_events_real_time&dsp=SDSC&dspId=' + dspId
+      + '&from=' + d + '&station=' + currentStation + '&timeFrame=Daily&to=' + d;
+    const res = await fetch(url, { credentials: 'include', headers: { 'Accept': 'application/json' } });
+    if (!res.ok) { console.warn('[Radar] Safety live API HTTP', res.status); return []; }
+    const payload = await res.json().catch(() => null);
+    const rows = payload && payload.tableData
+      && payload.tableData.dsp_station_daily_safety_oss_events_real_time
+      && payload.tableData.dsp_station_daily_safety_oss_events_real_time.rows || [];
+    return rows.map(r => { try { return JSON.parse(r); } catch { return null; } }).filter(Boolean);
+  } catch (e) {
+    console.warn('[Radar] Safety live API blocked (likely CORS — open from a logistics tab):', e && e.message);
+    return [];
+  }
 }
 
 // ── Driver Info (personal phone, email, flex) from cloud ──
@@ -1920,7 +1968,11 @@ function openMap() {
 
   if (!drivers.length) return;
 
-  const stationCoords = { DJE5: [40.5245, -74.2574], DJZ6: [40.6667, -73.9958], DYY6: [40.6844, -73.9762], DNJ4: [40.7282, -74.0776] };
+  const stationCoords = {
+    DJE5: [40.5245, -74.2574], DJZ6: [40.6667, -73.9958], DJZ8: [40.6700, -74.1100],
+    DYY6: [40.6844, -73.9762], DJE1: [40.5800, -74.1500], DNK7: [40.7400, -74.1700],
+    DEW5: [40.7900, -74.2000], DNK2: [40.7100, -74.2300], DNJ4: [40.7282, -74.0776]
+  }; // v24: all 9 stations (approx coords for the station pin only)
   const sc2 = stationCoords[currentStation];
   if (sc2) {
     const sm = L.circleMarker(sc2, { radius: 10, color: '#818cf8', fillColor: '#818cf8', fillOpacity: .8, weight: 2 })
@@ -2011,9 +2063,14 @@ async function renderDebriefBody() {
       <div style="text-align:center;padding:20px"><div class="spinner"></div><p style="margin-top:8px;color:var(--fg3)">Loading nightly report...</p></div>
     `;
 
-    // Load nightly report from cloud
+    // Load nightly report from cloud — v24: POST reportPull bypasses the ~30min
+    // CDN cache that GET responses are subject to.
     try {
-      const resp = await fetch(cloudUrl + '?action=report&station=global');
+      const resp = await fetch(cloudUrl + '?action=reportPull&station=global', {
+        method: 'POST', mode: 'cors', cache: 'no-cache',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ station: 'global' })
+      });
       const data = await resp.json();
       nightlyReportData = data;
       renderNightlyReport(data);
@@ -2029,77 +2086,254 @@ async function renderDebriefBody() {
   }
 }
 
+// v24: FULL-PARITY editable nightly report on mobile.
+// Mirrors the desktop (A1/A3) schema. Edits write back to the GLOBAL cloud
+// report via ?action=report with _ts/savedAt so last-write-wins keeps every
+// surface in agreement within the sync interval.
+function _rptDefaults() {
+  return {
+    lastDate: '', dispatcher1: '', dispatcher2: '',
+    closingDispatcher1: '', closingDispatcher2: '',
+    phonesUsed: 0, phonesBack: 0, phonesInStation: 0, phonesInRepair: 0, phonesTotal: 0,
+    gasUsed: 0, gasBack: 0, gasTotal: 0,
+    damages: [], defects: [], inspections: [], pendingAVI: [],
+    safety: {}, vansGas: [], forcedBreaks: [], noBreakDAs: [],
+    addComments: ['', '', '', '', '', ''],
+    permComments: ['', '', '', '', ''],
+    evsOutside: ''
+  };
+}
+
+function _escA(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
 function renderNightlyReport(rpt) {
   const body = document.getElementById('debriefBody');
-  if (!rpt || !rpt.lastDate) {
-    body.innerHTML = `
-      <div class="debrief-tabs">
-        <button class="debrief-tab" onclick="switchDebriefMode('morning')">☀️ Morning</button>
-        <button class="debrief-tab active" onclick="switchDebriefMode('nightly')">🌙 Nightly</button>
-      </div>
-      <div class="empty"><p>No nightly report available. Generate one from the desktop version first.</p></div>
-    `;
-    return;
-  }
+  // Always give the editor a complete object so every field is editable even on
+  // a fresh/empty report (you can author one from the phone).
+  rpt = Object.assign(_rptDefaults(), rpt || {});
+  if (!Array.isArray(rpt.addComments)) rpt.addComments = ['', '', '', '', '', ''];
+  if (!Array.isArray(rpt.permComments)) rpt.permComments = ['', '', '', '', ''];
+  if (!rpt.safety || typeof rpt.safety !== 'object') rpt.safety = {};
+  nightlyReportData = rpt;
 
-  // Build a read-only view of the nightly report
-  let html = `
+  const SAFETY_CATS = ['Speeding', 'Sign/Signal Violations', 'Distraction', 'Following Distance', 'Seatbelt', 'Camera Obstruction', 'Other'];
+
+  const tabs = `
     <div class="debrief-tabs">
       <button class="debrief-tab" onclick="switchDebriefMode('morning')">☀️ Morning</button>
       <button class="debrief-tab active" onclick="switchDebriefMode('nightly')">🌙 Nightly</button>
-    </div>
-    <div style="text-align:center;margin-bottom:10px">
+    </div>`;
+
+  // --- helpers to build editable rows ---
+  const txt = (label, val, path, ph) =>
+    `<div class="rpt-row"><label>${label}</label>` +
+    `<input type="text" value="${_escA(val)}" placeholder="${_escA(ph || '')}" ` +
+    `oninput="_rptSet('${path}', this.value)"></div>`;
+  const num = (label, val, path) =>
+    `<div class="rpt-row"><label>${label}</label>` +
+    `<input type="number" inputmode="numeric" value="${_escA(val || 0)}" ` +
+    `oninput="_rptSet('${path}', this.value, true)"></div>`;
+
+  let html = tabs + `
+    <div style="text-align:center;margin-bottom:8px">
       <div style="font-size:16px;font-weight:800;color:var(--indigo)">🌙 Nightly Report</div>
-      <div style="font-size:11px;color:var(--fg3)">${rpt.lastDate || ''} · ${rpt.station || currentStation}</div>
-    </div>
-  `;
+      <div style="font-size:11px;color:var(--fg3)">${_escA(rpt.lastDate || todayET())} · ${_escA(rpt.station || currentStation)}
+        <span id="rptSyncTag" style="margin-left:6px"></span></div>
+    </div>`;
 
   // Closing team
-  if (rpt.closingDispatcher1 || rpt.closingDispatcher2) {
-    html += `<div class="modal-section">
-      <div class="modal-section-title" style="color:var(--indigo)">👥 Closing Team</div>
-      <div style="font-size:11px;color:var(--fg)">${rpt.closingDispatcher1 || 'N/A'} · ${rpt.closingDispatcher2 || 'N/A'}</div>
-    </div>`;
-  }
+  html += `<div class="modal-section"><div class="modal-section-title" style="color:var(--indigo)">👥 Closing Team</div>
+    ${txt('Closer 1', rpt.closingDispatcher1, 'closingDispatcher1', 'Name')}
+    ${txt('Closer 2', rpt.closingDispatcher2, 'closingDispatcher2', 'Name')}
+  </div>`;
 
   // Phones
-  if (rpt.phonesUsed !== undefined) {
-    html += `<div class="modal-section">
-      <div class="modal-section-title" style="color:var(--blue)">📱 Phones</div>
-      <div style="font-size:10px;color:var(--fg2)">Used: ${rpt.phonesUsed || 0} · Back: ${rpt.phonesBack || 0} · Total: ${rpt.phonesTotal || 0} · In Repair: ${rpt.phonesRepair || 0}</div>
-    </div>`;
-  }
+  html += `<div class="modal-section"><div class="modal-section-title" style="color:var(--blue)">📱 Phones</div>
+    ${num('Used Today', rpt.phonesUsed, 'phonesUsed')}
+    ${num('Back to Station', rpt.phonesBack, 'phonesBack')}
+    ${num('In Station', rpt.phonesInStation, 'phonesInStation')}
+    ${num('In Repair', rpt.phonesInRepair, 'phonesInRepair')}
+    ${num('Total', rpt.phonesTotal, 'phonesTotal')}
+  </div>`;
 
   // Gas cards
-  if (rpt.gasUsed !== undefined) {
-    html += `<div class="modal-section">
-      <div class="modal-section-title" style="color:var(--amber)">⛽ Gas Cards</div>
-      <div style="font-size:10px;color:var(--fg2)">Used: ${rpt.gasUsed || 0} · Back: ${rpt.gasBack || 0} · Total: ${rpt.gasTotal || 0}</div>
-    </div>`;
-  }
+  html += `<div class="modal-section"><div class="modal-section-title" style="color:var(--amber)">⛽ Gas Cards</div>
+    ${num('Used Today', rpt.gasUsed, 'gasUsed')}
+    ${num('Back to Station', rpt.gasBack, 'gasBack')}
+    ${num('Total', rpt.gasTotal, 'gasTotal')}
+  </div>`;
 
-  // Additional comments
-  if (rpt.comments && rpt.comments.some(c => c && c.trim())) {
-    html += `<div class="modal-section">
-      <div class="modal-section-title" style="color:var(--fg)">💬 Comments</div>`;
-    rpt.comments.filter(c => c && c.trim()).forEach(c => {
-      html += `<div style="font-size:10px;color:var(--fg2);padding:2px 0;border-bottom:1px solid var(--bg3)">${c}</div>`;
-    });
-    html += '</div>';
-  }
+  // Defects (list)
+  html += `<div class="modal-section"><div class="modal-section-title" style="color:#ef4444">🔧 Defects
+    <button class="rpt-add" onclick="_rptAddItem('defects')">+ Add</button></div>
+    <div id="rpt_list_defects">${_rptRenderList('defects', rpt.defects, [['vehicle','Vehicle'],['note','Note']])}</div>
+  </div>`;
+
+  // Damages (list)
+  html += `<div class="modal-section"><div class="modal-section-title" style="color:#f97316">🛠️ Damages
+    <button class="rpt-add" onclick="_rptAddItem('damages')">+ Add</button></div>
+    <div id="rpt_list_damages">${_rptRenderList('damages', rpt.damages, [['vehicle','Vehicle'],['note','Note']])}</div>
+  </div>`;
+
+  // Safety (per category, editable entries)
+  html += `<div class="modal-section"><div class="modal-section-title" style="color:#22c55e">🦺 Safety Dashboard
+    <button class="rpt-add" onclick="_rptRefreshSafety()" title="Pull from cloud / live API">↻ Refresh</button></div>`;
+  SAFETY_CATS.forEach(cat => {
+    const arr = Array.isArray(rpt.safety[cat]) ? rpt.safety[cat] : [];
+    html += `<div style="margin:6px 0 2px;font-size:11px;font-weight:700;color:var(--fg2)">${_escA(cat)}
+      <button class="rpt-add" onclick="_rptAddSafety('${_escA(cat)}')">+</button></div>
+      <div id="rpt_safety_${_safetyId(cat)}">${_rptRenderSafetyCat(cat, arr)}</div>`;
+  });
+  html += `</div>`;
+
+  // Comments
+  html += `<div class="modal-section"><div class="modal-section-title" style="color:var(--fg)">💬 Comments</div>`;
+  rpt.addComments.forEach((c, i) => {
+    html += `<textarea class="rpt-ta" rows="2" placeholder="Comment ${i + 1}" oninput="_rptSetArr('addComments', ${i}, this.value)">${_escA(c)}</textarea>`;
+  });
+  html += `</div>`;
 
   // Permanent comments
-  if (rpt.permComments && rpt.permComments.some(c => c && c.trim())) {
-    html += `<div class="modal-section">
-      <div class="modal-section-title" style="color:var(--violet)">📌 Permanent Comments</div>`;
-    rpt.permComments.filter(c => c && c.trim()).forEach(c => {
-      html += `<div style="font-size:10px;color:var(--fg2);padding:2px 0;border-bottom:1px solid var(--bg3)">${c}</div>`;
-    });
-    html += '</div>';
-  }
+  html += `<div class="modal-section"><div class="modal-section-title" style="color:var(--violet)">📌 Permanent Comments</div>`;
+  rpt.permComments.forEach((c, i) => {
+    html += `<textarea class="rpt-ta" rows="2" placeholder="Permanent ${i + 1}" oninput="_rptSetArr('permComments', ${i}, this.value)">${_escA(c)}</textarea>`;
+  });
+  html += `</div>`;
 
-  html += `<p style="font-size:8px;color:var(--fg3);text-align:center;margin-top:12px;font-style:italic">Mobile Amazon Radar — By: Andrismar T.</p>`;
+  // Save bar
+  html += `<div style="position:sticky;bottom:0;background:var(--bg);padding:8px 0 4px;border-top:1px solid var(--bg3);text-align:center">
+      <button id="rptSaveBtn" class="rpt-save-btn" onclick="saveNightlyReport()">💾 Save Report</button>
+    </div>
+    <p style="font-size:8px;color:var(--fg3);text-align:center;margin-top:8px;font-style:italic">Mobile Amazon Radar — By: Andrismar T.</p>`;
+
   body.innerHTML = html;
+}
+
+// ── editor state mutators (operate on nightlyReportData in place) ──
+function _rptSet(path, val, isNum) {
+  if (!nightlyReportData) nightlyReportData = _rptDefaults();
+  nightlyReportData[path] = isNum ? (parseInt(val, 10) || 0) : val;
+}
+function _rptSetArr(arrName, idx, val) {
+  if (!nightlyReportData) nightlyReportData = _rptDefaults();
+  if (!Array.isArray(nightlyReportData[arrName])) nightlyReportData[arrName] = [];
+  nightlyReportData[arrName][idx] = val;
+}
+function _rptRenderList(name, arr, fields) {
+  arr = Array.isArray(arr) ? arr : [];
+  if (!arr.length) return '<div style="font-size:10px;color:var(--fg3);padding:2px 0">— none —</div>';
+  return arr.map((item, i) => {
+    const inputs = fields.map(([k, ph]) =>
+      `<input type="text" value="${_escA(item[k])}" placeholder="${_escA(ph)}" ` +
+      `oninput="_rptListSet('${name}',${i},'${k}',this.value)" style="flex:1">`).join('');
+    return `<div class="rpt-litem">${inputs}<button class="rpt-del" onclick="_rptDelItem('${name}',${i})">✕</button></div>`;
+  }).join('');
+}
+function _rptListSet(name, idx, key, val) {
+  if (!nightlyReportData[name]) nightlyReportData[name] = [];
+  if (!nightlyReportData[name][idx]) nightlyReportData[name][idx] = {};
+  nightlyReportData[name][idx][key] = val;
+}
+function _rptAddItem(name) {
+  if (!nightlyReportData[name]) nightlyReportData[name] = [];
+  nightlyReportData[name].push({ vehicle: '', note: '' });
+  const el = document.getElementById('rpt_list_' + name);
+  if (el) el.innerHTML = _rptRenderList(name, nightlyReportData[name], [['vehicle', 'Vehicle'], ['note', 'Note']]);
+}
+function _rptDelItem(name, idx) {
+  if (!nightlyReportData[name]) return;
+  nightlyReportData[name].splice(idx, 1);
+  const el = document.getElementById('rpt_list_' + name);
+  if (el) el.innerHTML = _rptRenderList(name, nightlyReportData[name], [['vehicle', 'Vehicle'], ['note', 'Note']]);
+}
+function _safetyId(cat) { return cat.replace(/[^a-z0-9]/gi, '_'); }
+function _rptRenderSafetyCat(cat, arr) {
+  arr = Array.isArray(arr) ? arr : [];
+  if (!arr.length) return '<div style="font-size:10px;color:var(--fg3);padding:1px 0">— none —</div>';
+  return arr.map((e, i) =>
+    `<div class="rpt-litem">
+       <input type="text" value="${_escA(e.driver)}" placeholder="Driver" oninput="_rptSafetySet('${_escA(cat)}',${i},'driver',this.value)" style="flex:1">
+       <input type="text" value="${_escA(e.note)}" placeholder="Note" oninput="_rptSafetySet('${_escA(cat)}',${i},'note',this.value)" style="flex:1.4">
+       <button class="rpt-del" onclick="_rptDelSafety('${_escA(cat)}',${i})">✕</button>
+     </div>`).join('');
+}
+function _rptSafetySet(cat, idx, key, val) {
+  if (!nightlyReportData.safety) nightlyReportData.safety = {};
+  if (!nightlyReportData.safety[cat]) nightlyReportData.safety[cat] = [];
+  if (!nightlyReportData.safety[cat][idx]) nightlyReportData.safety[cat][idx] = {};
+  nightlyReportData.safety[cat][idx][key] = val;
+}
+function _rptAddSafety(cat) {
+  if (!nightlyReportData.safety) nightlyReportData.safety = {};
+  if (!nightlyReportData.safety[cat]) nightlyReportData.safety[cat] = [];
+  nightlyReportData.safety[cat].push({ driver: '', note: '' });
+  const el = document.getElementById('rpt_safety_' + _safetyId(cat));
+  if (el) el.innerHTML = _rptRenderSafetyCat(cat, nightlyReportData.safety[cat]);
+}
+function _rptDelSafety(cat, idx) {
+  if (!nightlyReportData.safety || !nightlyReportData.safety[cat]) return;
+  nightlyReportData.safety[cat].splice(idx, 1);
+  const el = document.getElementById('rpt_safety_' + _safetyId(cat));
+  if (el) el.innerHTML = _rptRenderSafetyCat(cat, nightlyReportData.safety[cat]);
+}
+
+// Refresh Safety from cloud broadcast; if empty, try the live same-origin API.
+async function _rptRefreshSafety() {
+  showToast('Refreshing safety…');
+  const evts = await fetchSafetyEventsWithFallback();
+  if (!evts || !evts.length) { showToast('No safety data available', true); return; }
+  if (!nightlyReportData.safety) nightlyReportData.safety = {};
+  let added = 0;
+  evts.forEach(e => {
+    const cat = _mobileSafetyCategory(e.dashboard_metric_type, e.dashboard_metric_subtype);
+    if (!nightlyReportData.safety[cat]) nightlyReportData.safety[cat] = [];
+    const driver = (e.da_name || 'Unknown').trim();
+    const note = [(e.dashboard_metric_subtype || ''), (e.severity || '')].filter(Boolean).join(' — ');
+    const exists = nightlyReportData.safety[cat].some(x => x.driver === driver && x.note === note);
+    if (!exists) { nightlyReportData.safety[cat].push({ driver, note }); added++; }
+  });
+  renderNightlyReport(nightlyReportData);
+  showToast(added ? (added + ' safety event(s) added') : 'Already up to date');
+}
+function _mobileSafetyCategory(type, sub) {
+  const t = ((type || '') + ' ' + (sub || '')).toLowerCase();
+  if (t.includes('speed')) return 'Speeding';
+  if (t.includes('sign') || t.includes('signal') || t.includes('stop')) return 'Sign/Signal Violations';
+  if (t.includes('distract') || t.includes('phone')) return 'Distraction';
+  if (t.includes('follow')) return 'Following Distance';
+  if (t.includes('seatbelt') || t.includes('belt')) return 'Seatbelt';
+  if (t.includes('camera') || t.includes('obstruct')) return 'Camera Obstruction';
+  return 'Other';
+}
+
+function todayET() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })).toDateString();
+}
+
+// Save the edited report to the GLOBAL cloud file (joins the desktop sync loop).
+async function saveNightlyReport() {
+  const btn = document.getElementById('rptSaveBtn');
+  if (btn) btn.textContent = '⏳ Saving…';
+  if (!nightlyReportData) nightlyReportData = _rptDefaults();
+  nightlyReportData.lastDate = nightlyReportData.lastDate || todayET();
+  nightlyReportData._ts = Date.now();
+  nightlyReportData.savedAt = Date.now();
+  nightlyReportData._lastSource = 'A2-mobile';
+  try {
+    const resp = await fetch(cloudUrl + '?action=report&station=global&src=A2', {
+      method: 'POST', mode: 'cors', cache: 'no-cache',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(nightlyReportData)
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    if (btn) btn.textContent = '✅ Saved!';
+    showToast('Report saved to cloud');
+    setTimeout(() => { if (btn) btn.textContent = '💾 Save Report'; }, 2000);
+  } catch (e) {
+    if (btn) btn.textContent = '✗ Failed';
+    showToast('Save failed', true);
+    setTimeout(() => { if (btn) btn.textContent = '💾 Save Report'; }, 2000);
+  }
 }
 
 async function saveDebriefToCloud() {
