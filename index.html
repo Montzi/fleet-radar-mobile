@@ -2099,6 +2099,7 @@ function _rptDefaults() {
     damages: [], defects: [], inspections: [], pendingAVI: [],
     safety: {}, vansGas: [], forcedBreaks: [], noBreakDAs: [],
     addComments: ['', '', '', '', '', ''],
+    vanIssues: ['', '', '', ''],
     permComments: ['', '', '', '', ''],
     evsOutside: ''
   };
@@ -2112,6 +2113,8 @@ function renderNightlyReport(rpt) {
   // a fresh/empty report (you can author one from the phone).
   rpt = Object.assign(_rptDefaults(), rpt || {});
   if (!Array.isArray(rpt.addComments)) rpt.addComments = ['', '', '', '', '', ''];
+  if (!Array.isArray(rpt.vanIssues)) rpt.vanIssues = ['', '', '', ''];
+  while (rpt.vanIssues.length < 4) rpt.vanIssues.push('');
   if (!Array.isArray(rpt.permComments)) rpt.permComments = ['', '', '', '', ''];
   if (!rpt.safety || typeof rpt.safety !== 'object') rpt.safety = {};
   nightlyReportData = rpt;
@@ -2193,6 +2196,14 @@ function renderNightlyReport(rpt) {
   });
   html += `</div>`;
 
+  // Van/Fleet Issues (directly under Comments; same UX) — v23.1
+  html += `<div class="modal-section"><div class="modal-section-title" style="color:var(--fg)">🚐 Van/Fleet Issues
+      <button class="rpt-add" onclick="_rptAddVanIssue()">+</button></div>`;
+  rpt.vanIssues.forEach((c, i) => {
+    html += `<textarea class="rpt-ta" rows="2" placeholder="Van/Fleet issue ${i + 1}" oninput="_rptSetArr('vanIssues', ${i}, this.value)">${_escA(c)}</textarea>`;
+  });
+  html += `</div>`;
+
   // Permanent comments
   html += `<div class="modal-section"><div class="modal-section-title" style="color:var(--violet)">📌 Permanent Comments</div>`;
   rpt.permComments.forEach((c, i) => {
@@ -2239,6 +2250,11 @@ function _rptAddItem(name) {
   nightlyReportData[name].push({ vehicle: '', note: '' });
   const el = document.getElementById('rpt_list_' + name);
   if (el) el.innerHTML = _rptRenderList(name, nightlyReportData[name], [['vehicle', 'Vehicle'], ['note', 'Note']]);
+}
+function _rptAddVanIssue() {
+  if (!Array.isArray(nightlyReportData.vanIssues)) nightlyReportData.vanIssues = [];
+  nightlyReportData.vanIssues.push('');
+  renderNightlyReport(nightlyReportData);
 }
 function _rptDelItem(name, idx) {
   if (!nightlyReportData[name]) return;
