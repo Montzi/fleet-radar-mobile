@@ -1,15 +1,31 @@
 <!DOCTYPE html>
 <!--
   Mobile Amazon Radar — viewer (A2)
-  v23 + v24 patch (KEEP-LAST-GOOD ANTI-FLICKER):
-  - FIXED: viewer flickered to "No data" between good pulls. GAS pullMemoryFresh
-    returns {drivers:{}, _empty:true} for an empty/absent station file, and {} is
-    truthy, so the old `if (data.drivers)` adopted it and re-rendered blank on
-    every transient empty pull. Now the fetch only adopts + re-renders when the
-    pull actually contains driver data; an empty/blip pull for a station we
-    already have data for is ignored — the last good list stays on screen and the
-    status shows "● N drv · last update Xm ago" (new 'stale' status). Mirrors
-    A1R V21.59R3 / A1 V21.59.3. (Pull already used the POST CDN-bypass.)
+  v24 (4-BUG PASS — parity with A1 V21.85):
+  - FIX #1 INSP-DONE SINKS TO BOTTOM: inspection-done drivers were sorted in with
+    everyone else (and an inspected sweeper/pinned driver even floated to top).
+    The list now sinks inspectionDone drivers to the very bottom in every sort
+    mode (newest inspection first among them), BEFORE the pinned/sweeper tiers —
+    mirroring A1 getSortedDriversList (V21.85, "inspection-done always sinks to
+    bottom in every sort mode").
+  - FIX #2 MODAL HEADER ALWAYS VISIBLE: the bottom-sheet modal could open with its
+    top edge (route name + ✕ close) tucked under the iOS status bar / notch, so the
+    user had to scroll up to reach the X. The card now reserves safe-area top space
+    and the route-name + ✕ row is a sticky header that stays pinned while the body
+    scrolls. Contact details moved just below the sticky bar.
+  - FIX #3 STUCK-ON-BREAK GUARD: a driver could show "☕ BREAK (109m)" forever when
+    the upstream break-END event was lost. The viewer now mirrors A1's activity-based
+    break-end (V20.1.17): a delivery logged AFTER the break started — or a break that
+    has run past a sane cap — is treated as break-over, so onBreak()/effState() drive
+    the badge, card color, state text, filter and count consistently (no more runaway).
+  - FIX #4 LOADING STATE + FAST COLD-START: on first load an empty/late pull showed a
+    bare "No drivers in this filter". A list state-machine now shows a spinner +
+    "Connecting to <station>…" until real data arrives, and cold-start retries every
+    4s (up to ~32s) so drivers appear right away instead of after the 30s cycle; only
+    after that does it settle to "No data yet for <station> · auto-refreshing".
+  - (carried) KEEP-LAST-GOOD ANTI-FLICKER: empty/blip pulls for a station we already
+    have data for are ignored — last good list stays on screen ("● N drv · last
+    update Xm ago"). Pull uses the POST CDN-bypass.
 -->
 <html lang="en">
 <head>
@@ -412,10 +428,24 @@ html, body {
 
 .modal-card {
   background: var(--bg); border-radius: 16px 16px 0 0;
-  width: 100%; max-width: 500px; max-height: 92vh;
+  width: 100%; max-width: 500px;
+  /* v24 FIX #2: leave room for the notch/status bar so the top of the sheet
+     (route name + ✕) is never tucked off-screen. */
+  max-height: calc(94vh - var(--safe-top));
   overflow-y: auto; -webkit-overflow-scrolling: touch;
-  padding: 14px 12px calc(14px + var(--safe-bot));
+  /* top padding now lives in the sticky .modal-header; keep sides + safe bottom */
+  padding: 0 12px calc(14px + var(--safe-bot));
   animation: slideUp .25s ease;
+}
+
+/* v24 FIX #2: sticky header keeps route name + close button visible while the
+   modal body scrolls, and clears the safe-area inset at the top. */
+.modal-header {
+  position: sticky; top: 0; z-index: 30;
+  background: var(--bg);
+  margin: 0 -12px 8px; padding: calc(10px + var(--safe-top)) 12px 8px;
+  border-bottom: 1px solid var(--bg3);
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;
 }
 
 @keyframes slideUp {
@@ -424,9 +454,11 @@ html, body {
 }
 
 .modal-close {
+  flex-shrink: 0;
   background: var(--bg2); border: 1px solid var(--bg3);
-  color: var(--fg2); padding: 4px 12px;
-  border-radius: 6px; cursor: pointer; font-size: 13px;
+  color: var(--fg2); padding: 6px 14px;
+  border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: 700;
+  line-height: 1;
 }
 
 .info-grid {
@@ -880,6 +912,16 @@ let refreshTimer = null;
 let activeFilter = 'ALL';
 let searchQuery = '';
 let isRefreshing = false;
+// ── v24 FIX #4: first-load UX. Track whether real data has ever arrived so an
+// early empty/late pull shows a spinner ("Connecting…") instead of a bare
+// "No drivers in this filter", and retry fast on cold start so drivers appear
+// right away instead of after the 30s cycle.
+let _hasEverLoaded = false;            // true once a pull returned real driver data this session
+let _listState = 'loading';            // 'loading' | 'ready' | 'empty'
+let _coldAttempts = 0;                  // consecutive empty/failed pulls before first data
+let _coldRetryTimer = null;
+const COLD_RETRY_MS = 4000;             // fast retry cadence during cold start
+const COLD_MAX_ATTEMPTS = 8;            // ~32s of fast retries, then settle to "no data yet"
 let sortMode = 0;
 const SORT_NAMES = ['Route', 'Stops ↓', 'Pkgs ↓', 'Behind', 'Pace'];
 let leafletMap = null;
@@ -1043,6 +1085,11 @@ async function fetchData() {
       lastFetch = Date.now();
       _lastGoodStation = currentStation;
       _lastGoodTs = Date.now();
+      // v24 FIX #4: real data arrived — leave cold-start mode.
+      _hasEverLoaded = true;
+      _listState = 'ready';
+      _coldAttempts = 0;
+      if (_coldRetryTimer) { clearTimeout(_coldRetryTimer); _coldRetryTimer = null; }
       // V3.2: Log diagnostic metadata for freshness tracing
       if (data._servedAt && data._fileModified) {
         const serveLag = data._servedAt - data._fileModified;
@@ -1058,9 +1105,27 @@ async function fetchData() {
         const _agoMin = Math.round((Date.now() - (_lastGoodTs || Date.now())) / 60000);
         setSyncStatus('stale', _agoMin > 0 ? (_agoMin + 'm ago') : '<1m ago');
         // do NOT overwrite memory or re-render — last good list stays put
-      } else {
-        // Nothing to preserve (never synced this session / just switched stations).
+      } else if (!_hasEverLoaded) {
+        // v24 FIX #4: cold start, no data yet — keep a loading message on screen and
+        // retry quickly so drivers show as soon as the station file is pushed.
         memory = (data && typeof data === 'object') ? data : { drivers: {} };
+        _coldAttempts++;
+        if (_coldAttempts < COLD_MAX_ATTEMPTS) {
+          _listState = 'loading';
+          setSyncStatus('connecting');
+          render();
+          if (!_coldRetryTimer) {
+            _coldRetryTimer = setTimeout(() => { _coldRetryTimer = null; fetchData(); }, COLD_RETRY_MS);
+          }
+        } else {
+          _listState = 'empty';
+          setSyncStatus('empty');
+          render();
+        }
+      } else {
+        // Already loaded earlier this session but nothing to preserve (e.g. cleared).
+        memory = (data && typeof data === 'object') ? data : { drivers: {} };
+        _listState = 'empty';
         setSyncStatus('empty');
         render();
       }
@@ -1068,6 +1133,14 @@ async function fetchData() {
   } catch (e) {
     console.error('[Radar] Fetch error:', e);
     setSyncStatus('error', e.message);
+    // v24 FIX #4: keep retrying fast on a cold-start network hiccup so the very
+    // first load isn't stranded for a full 30s cycle.
+    if (!_hasEverLoaded && _coldAttempts < COLD_MAX_ATTEMPTS) {
+      _coldAttempts++;
+      if (!_coldRetryTimer) {
+        _coldRetryTimer = setTimeout(() => { _coldRetryTimer = null; fetchData(); }, COLD_RETRY_MS);
+      }
+    }
     if (memory.drivers) render();
   }
 
@@ -1182,6 +1255,10 @@ function setSyncStatus(status, detail) {
   } else if (status === 'syncing') {
     label.textContent = '☁️ Syncing...';
     document.getElementById('syncBtn').classList.remove('synced');
+  } else if (status === 'connecting') {
+    // v24 FIX #4: cold-start, waiting on the first data push for this station
+    label.textContent = '⏳ Connecting to ' + currentStation + '…';
+    document.getElementById('syncBtn').classList.remove('synced');
   } else if (status === 'error') {
     dot.classList.add('err');
     label.textContent = '✗ ' + (detail || 'Offline');
@@ -1267,7 +1344,13 @@ function selectStation(s) {
   closeStationPicker();
   memory = {};
   driverInfoMap = {};
-  document.getElementById('driverList').innerHTML = '<div class="empty"><div class="spinner"></div></div>';
+  // v24 FIX #4: re-enter cold-start mode for the new station so it shows a spinner +
+  // fast retries instead of an instant "No drivers in this filter".
+  _hasEverLoaded = false;
+  _listState = 'loading';
+  _coldAttempts = 0;
+  if (_coldRetryTimer) { clearTimeout(_coldRetryTimer); _coldRetryTimer = null; }
+  document.getElementById('driverList').innerHTML = '<div class="empty"><div class="spinner"></div><p style="margin-top:10px">Connecting to ' + s + '…</p></div>';
   fetchData();
   fetchDriverInfo();
 }
@@ -1325,6 +1408,29 @@ function pct(d) {
   return (d.stopsTotal || 0) > 0 ? Math.min(100, (d.stopsCompleted || 0) / (d.stopsTotal || 1) * 100) : 0;
 }
 
+// ── v24 FIX #3: STUCK-ON-BREAK GUARD (viewer-side, mirrors A1 V20.1.17) ──
+// The upstream ON BREAK flag can get stuck when the break-END event is lost, so a
+// driver shows "☕ BREAK (109m)" indefinitely. A delivery logged AFTER the break
+// started proves the driver is back working (same signal A1 uses to end a break),
+// and a break that has run past a sane cap is assumed to have a lost end-event.
+// In either case the viewer treats the driver as no longer on break.
+const STUCK_BREAK_CAP_MS = 90 * 60 * 1000; // 90 min — real Amazon breaks are ~30 min
+function onBreak(d) {
+  if (!d || d.state !== 'ON BREAK' || d.inspectionDone) return false;
+  const bs = d.currentBreakStart || 0;
+  if (bs) {
+    if ((d.lastDeliveryTime || 0) > bs) return false;          // delivered after break began
+    if ((Date.now() - bs) > STUCK_BREAK_CAP_MS) return false;  // runaway / lost end-event
+  }
+  return true;
+}
+// Effective state string: a stale ON BREAK collapses to the real working state so
+// colors / labels don't stay frozen on blue.
+function effState(d) {
+  if (d && d.state === 'ON BREAK' && !onBreak(d)) return 'MOVING';
+  return d ? d.state : undefined;
+}
+
 function stateColor(state, d) {
   if (d && d.inspectionDone) return '#22c55e';
   if (d && !d.inspectionDone && (d.progressStatus === 'BEHIND' || d.progressStatus === 'AT_RISK') && state !== 'FINISHED') return '#ef4444';
@@ -1360,20 +1466,22 @@ function gpsStatusText(d) {
 function dispState(d) {
   if (d.isSweeper) {
     const ns = (d.stopsTotal || 0) > 0 && (d.stopsCompleted || 0) > 0 && rem(d) === 0;
-    if (d.state === 'ON BREAK') return ns ? '✅ AVAILABLE' : '☕ ON BREAK';
+    if (onBreak(d)) return ns ? '✅ AVAILABLE' : '☕ ON BREAK';
     if (ns && d.gpsAtStation) return '✅ FINISHED';
     if (ns) return '✅ AVAILABLE';
     return '🔄 BUSY';
   }
   if (d.isFlexRoute) {
     if (rem(d) === 0 || (d.remainingPkgs || 0) === 0) return '✅ FINISHED';
-    if (d.state === 'ON BREAK') return '☕ ON BREAK';
+    if (onBreak(d)) return '☕ ON BREAK';
     return '🔄 BUSY';
   }
   if (d.isHelper) {
-    if (d.state === 'ON BREAK') return '☕ ON BREAK';
+    if (onBreak(d)) return '☕ ON BREAK';
     return rem(d) === 0 ? '✅ DONE' : 'HELPING';
   }
+  // v24 FIX #3: stale ON BREAK (delivered after break / ran too long) → working state
+  if (d.state === 'ON BREAK' && !onBreak(d)) return rem(d) === 0 ? 'FINISHED' : (d.gpsAtStation ? 'AT STATION' : 'MOVING');
   if (d.state === 'AT STATION' && d.gpsAtStation && d.firstDeliveryTime && (d.stopsCompleted || 0) > 0 && (d.stopsTotal || 0) > 0 && rem(d) === 0) return 'FINISHED';
   if (d.state === 'FINISHED' && (!d.firstDeliveryTime || (d.stopsCompleted || 0) === 0)) return 'AT STATION';
   if (d.state === 'GETTING GAS') return '⛽ Getting Gas';
@@ -1383,22 +1491,22 @@ function dispState(d) {
 function cardStyle(d) {
   if (d.isRemoved) return 'border-left:4px solid #4b5563;opacity:.5;';
   if (d.inspectionDone) return 'background:linear-gradient(145deg,#0d3d22,#072918);border-left:4px solid #2CC871;';
-  if (d.state === 'ON BREAK' && !d.isSweeper && !d.isFlexRoute && !d.isHelper) return 'background:linear-gradient(145deg,#1e40af,#1e3a8a);border-left:4px solid #3b82f6;';
+  if (onBreak(d) && !d.isSweeper && !d.isFlexRoute && !d.isHelper) return 'background:linear-gradient(145deg,#1e40af,#1e3a8a);border-left:4px solid #3b82f6;';
   if (d.state === 'GETTING GAS') return 'background:linear-gradient(145deg,#78350f,#451a03);border-left:4px solid #f59e0b;';
   if (d.isSweeper) {
     const ns = (d.stopsTotal || 0) > 0 && (d.stopsCompleted || 0) > 0 && rem(d) === 0;
     if (ns && d.gpsAtStation) return 'background:linear-gradient(145deg,#374151,#1f2937);border-left:4px solid #6b7280;';
-    if (d.state === 'ON BREAK') return 'background:linear-gradient(145deg,#1e40af,#1e3a8a);border-left:4px solid #3b82f6;';
+    if (onBreak(d)) return 'background:linear-gradient(145deg,#1e40af,#1e3a8a);border-left:4px solid #3b82f6;';
     if (ns) return 'background:linear-gradient(145deg,#065f46,#064e3b);border-left:4px solid #10b981;';
     return 'background:linear-gradient(145deg,#853b12,#5c2709);border-left:4px solid #fb923c;';
   }
   if (d.isFlexRoute) return 'background:linear-gradient(145deg,#581c87,#3b0764);border-left:4px solid #a855f7;';
   if (d.isHelper) {
-    if (d.state === 'ON BREAK') return 'background:linear-gradient(145deg,#1e40af,#1e3a8a);border-left:4px solid #3b82f6;';
+    if (onBreak(d)) return 'background:linear-gradient(145deg,#1e40af,#1e3a8a);border-left:4px solid #3b82f6;';
     return 'background:linear-gradient(145deg,#1e3a5f,#162d4a);border-left:4px solid #60a5fa;';
   }
   if (d.hasExtraPhone) return 'border-left:4px solid #f97316;background:linear-gradient(to right,#1c1208,transparent 60%);';
-  const c = stateColor(d.state, d);
+  const c = stateColor(effState(d), d);
   return `border-left:4px solid ${c};`;
 }
 
@@ -1421,7 +1529,7 @@ function getFiltered(filter) {
   const act = raw.filter(d => d.state !== 'FINISHED');
   switch (filter) {
     case 'ALL': return raw;
-    case 'ON_BREAK': return act.filter(d => d.state === 'ON BREAK');
+    case 'ON_BREAK': return act.filter(d => onBreak(d));
     case 'NO_BREAKS': return raw.filter(d => d.hasNoBreaks);
     case 'INACTIVE': return act.filter(d => d.state === 'INACTIVE');
     case 'BEHIND': return act.filter(d => d.progressStatus === 'BEHIND' || d.progressStatus === 'AT_RISK');
@@ -1440,7 +1548,7 @@ function getCounts() {
   const ret = Object.values(memory.drivers || {}).reduce((s, d) => s + (d.returnedTbas && d.returnedTbas.length ? d.returnedTbas.length : 0), 0);
   return {
     ALL: raw.length,
-    ON_BREAK: act.filter(d => d.state === 'ON BREAK').length,
+    ON_BREAK: act.filter(d => onBreak(d)).length,
     NO_BREAKS: raw.filter(d => d.hasNoBreaks).length,
     INACTIVE: act.filter(d => d.state === 'INACTIVE').length,
     BEHIND: act.filter(d => d.progressStatus === 'BEHIND' || d.progressStatus === 'AT_RISK').length,
@@ -1517,6 +1625,16 @@ function renderDriverList() {
 
   // Sort
   drivers.sort((a, b) => {
+    // v24 FIX #1: inspection-done drivers always sink to the very bottom in every
+    // sort mode (newest inspection first among them) — mirrors A1 getSortedDriversList
+    // (V21.85). This runs BEFORE the pinned/sweeper tiers so an inspected sweeper or a
+    // pinned-but-inspected driver no longer floats to the top.
+    const aInsp = a.inspectionDone === true;
+    const bInsp = b.inspectionDone === true;
+    if (aInsp && !bInsp) return 1;
+    if (!aInsp && bInsp) return -1;
+    if (aInsp && bInsp) return (b.inspectionDoneTime || 0) - (a.inspectionDoneTime || 0);
+
     if (a.isPinned && !b.isPinned) return -1;
     if (!a.isPinned && b.isPinned) return 1;
     if (a.isSweeper && !b.isSweeper) return -1;
@@ -1536,7 +1654,20 @@ function renderDriverList() {
 
   const el = document.getElementById('driverList');
   if (!drivers.length) {
-    el.innerHTML = `<div class="empty"><p>${searchQuery ? 'No match for "' + searchQuery + '"' : 'No drivers in this filter'}</p></div>`;
+    // v24 FIX #4: distinguish "still loading" from "genuinely empty". A cold start
+    // shows a spinner + Connecting…; once data has loaded, an empty filter shows the
+    // normal message; if the cold start gave up, show "No data yet · auto-refreshing".
+    let inner;
+    if (searchQuery) {
+      inner = `<p>No match for "${searchQuery}"</p>`;
+    } else if (_listState === 'loading') {
+      inner = `<div class="spinner"></div><p style="margin-top:10px">Connecting to ${currentStation}…</p><p style="font-size:10px;color:var(--fg3);margin-top:4px">Loading fleet data</p>`;
+    } else if (_listState === 'empty' && activeFilter === 'ALL') {
+      inner = `<p>No data yet for ${currentStation}</p><p style="font-size:10px;color:var(--fg3);margin-top:4px">Auto-refreshing every ${Math.round(REFRESH_MS/1000)}s</p>`;
+    } else {
+      inner = `<p>No drivers in this filter</p>`;
+    }
+    el.innerHTML = `<div class="empty">${inner}</div>`;
     return;
   }
   el.innerHTML = drivers.map(d => buildCard(d)).join('');
@@ -1548,7 +1679,7 @@ function renderDriverList() {
 
 function buildCard(d) {
   const name = abbr(d.name);
-  const sc = stateColor(d.state, d);
+  const sc = stateColor(effState(d), d);
   const sR = rem(d);
   const dP = remPkg(d);
   const sp = pct(d);
@@ -1613,12 +1744,12 @@ function buildCard(d) {
   if (d.routeChanged && d.previousRoutes && d.previousRoutes.length > 0 && !d.isSweeper && !d.isFlexRoute && !d.isHelper)
     badges.push(['#f9731640', '#f97316', '🔄 Reassigned']);
 
-  const showStateBadge = !(d.inspectionDone || (d.state === 'ON BREAK' && !d.isSweeper && !d.isFlexRoute && !d.isHelper));
+  const showStateBadge = !(d.inspectionDone || (onBreak(d) && !d.isSweeper && !d.isFlexRoute && !d.isHelper));
   const stateBg = d.isSweeper || d.isFlexRoute || d.isHelper ? 'rgba(0,0,0,.35)' : sc + '40';
   const stateFg = d.isSweeper || d.isFlexRoute || d.isHelper ? '#e5e7eb' : sc;
 
   let breakBadge = '';
-  if (d.state === 'ON BREAK' && !d.inspectionDone) {
+  if (onBreak(d)) {
     const mins = d.currentBreakStart ? Math.floor((Date.now() - d.currentBreakStart) / 60000) : 0;
     breakBadge = `<span class="badge" style="background:#3b82f640;color:#93c5fd">☕ BREAK${mins ? ' (' + mins + 'm)' : ''}</span>`;
   }
@@ -1689,7 +1820,7 @@ function openModal(tid) {
   const sR = rem(d);
   const dP = remPkg(d);
   const sp = pct(d);
-  const c = stateColor(d.state, d);
+  const c = stateColor(effState(d), d);
   const state = dispState(d);
   const pkgT = Math.max(d.totalPkgs || 0, d.remainingPkgs || 0);
   const pkgDone = Math.max(0, pkgT - dP);
@@ -1831,8 +1962,8 @@ function openModal(tid) {
   }
 
   document.getElementById('modalContent').innerHTML = `
-    <!-- Header -->
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+    <!-- Header (sticky: route name + close stay visible while body scrolls) -->
+    <div class="modal-header">
       <div style="flex:1;min-width:0">
         <div style="font-size:14px;font-weight:800;display:flex;align-items:center;gap:4px;flex-wrap:wrap">
           ${gpsDot(d)}
@@ -1841,20 +1972,24 @@ function openModal(tid) {
           ${d.inspectionDone ? '<span style="background:#22c55e;color:#fff;padding:1px 5px;border-radius:3px;font-size:8px;font-weight:700">INSP DONE</span>' : ''}
         </div>
         ${getVehicleId(d) ? `<div style="font-size:10px;color:#d1d5db;font-weight:600;margin-top:2px">🚐 ${getVehicleId(d)}</div>` : ''}
-        <div style="font-size:10px;color:var(--fg2);margin-top:3px">
-          Work: <a href="tel:${workPhone}" style="color:var(--blue);text-decoration:none">${formatPhone(workPhone)}</a>
-        </div>
-        <div style="font-size:10px;color:var(--fg2)">
-          Personal: <a href="tel:${personalPhone}" style="color:var(--violet);text-decoration:none">${formatPhone(personalPhone)}</a>
-        </div>
-        <div style="font-size:10px;color:var(--fg2)">
-          Email: <span style="color:#e5e7eb;user-select:all">${workEmail}</span>
-        </div>
-        <div style="font-size:10px;color:var(--fg2)">
-          Flex: <span style="color:#e5e7eb;user-select:all">${flexPass}</span>
-        </div>
       </div>
       <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+
+    <!-- Contact details (scroll under the sticky header) -->
+    <div style="margin-bottom:8px">
+      <div style="font-size:10px;color:var(--fg2)">
+        Work: <a href="tel:${workPhone}" style="color:var(--blue);text-decoration:none">${formatPhone(workPhone)}</a>
+      </div>
+      <div style="font-size:10px;color:var(--fg2)">
+        Personal: <a href="tel:${personalPhone}" style="color:var(--violet);text-decoration:none">${formatPhone(personalPhone)}</a>
+      </div>
+      <div style="font-size:10px;color:var(--fg2)">
+        Email: <span style="color:#e5e7eb;user-select:all">${workEmail}</span>
+      </div>
+      <div style="font-size:10px;color:var(--fg2)">
+        Flex: <span style="color:#e5e7eb;user-select:all">${flexPass}</span>
+      </div>
     </div>
 
     <!-- Status + Pace -->
@@ -2099,7 +2234,6 @@ function _rptDefaults() {
     damages: [], defects: [], inspections: [], pendingAVI: [],
     safety: {}, vansGas: [], forcedBreaks: [], noBreakDAs: [],
     addComments: ['', '', '', '', '', ''],
-    vanIssues: ['', '', '', ''],
     permComments: ['', '', '', '', ''],
     evsOutside: ''
   };
@@ -2113,8 +2247,6 @@ function renderNightlyReport(rpt) {
   // a fresh/empty report (you can author one from the phone).
   rpt = Object.assign(_rptDefaults(), rpt || {});
   if (!Array.isArray(rpt.addComments)) rpt.addComments = ['', '', '', '', '', ''];
-  if (!Array.isArray(rpt.vanIssues)) rpt.vanIssues = ['', '', '', ''];
-  while (rpt.vanIssues.length < 4) rpt.vanIssues.push('');
   if (!Array.isArray(rpt.permComments)) rpt.permComments = ['', '', '', '', ''];
   if (!rpt.safety || typeof rpt.safety !== 'object') rpt.safety = {};
   nightlyReportData = rpt;
@@ -2196,14 +2328,6 @@ function renderNightlyReport(rpt) {
   });
   html += `</div>`;
 
-  // Van/Fleet Issues (directly under Comments; same UX) — v23.1
-  html += `<div class="modal-section"><div class="modal-section-title" style="color:var(--fg)">🚐 Van/Fleet Issues
-      <button class="rpt-add" onclick="_rptAddVanIssue()">+</button></div>`;
-  rpt.vanIssues.forEach((c, i) => {
-    html += `<textarea class="rpt-ta" rows="2" placeholder="Van/Fleet issue ${i + 1}" oninput="_rptSetArr('vanIssues', ${i}, this.value)">${_escA(c)}</textarea>`;
-  });
-  html += `</div>`;
-
   // Permanent comments
   html += `<div class="modal-section"><div class="modal-section-title" style="color:var(--violet)">📌 Permanent Comments</div>`;
   rpt.permComments.forEach((c, i) => {
@@ -2250,11 +2374,6 @@ function _rptAddItem(name) {
   nightlyReportData[name].push({ vehicle: '', note: '' });
   const el = document.getElementById('rpt_list_' + name);
   if (el) el.innerHTML = _rptRenderList(name, nightlyReportData[name], [['vehicle', 'Vehicle'], ['note', 'Note']]);
-}
-function _rptAddVanIssue() {
-  if (!Array.isArray(nightlyReportData.vanIssues)) nightlyReportData.vanIssues = [];
-  nightlyReportData.vanIssues.push('');
-  renderNightlyReport(nightlyReportData);
 }
 function _rptDelItem(name, idx) {
   if (!nightlyReportData[name]) return;
