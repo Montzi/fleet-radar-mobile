@@ -1506,6 +1506,7 @@ function cardStyle(d) {
     return 'background:linear-gradient(145deg,#1e3a5f,#162d4a);border-left:4px solid #60a5fa;';
   }
   if (d.hasExtraPhone) return 'border-left:4px solid #f97316;background:linear-gradient(to right,#1c1208,transparent 60%);';
+  if (d.hasExtraBattery) return 'border-left:4px solid #22d3ee;background:linear-gradient(to right,#08191c,transparent 60%);'; // v25
   const c = stateColor(effState(d), d);
   return `border-left:4px solid ${c};`;
 }
@@ -1730,6 +1731,7 @@ function buildCard(d) {
   if (d._enteredServiceArea && d.state !== 'EN ROUTE' && !d.inspectionDone)
     badges.push(['#8b5cf640', '#8b5cf6', '📍 EN ROUTE']);
   if (d.hasExtraPhone) badges.push(['#f9731640', '#f97316', `📱 x${d.extraPhoneCount || 1}`]);
+  if (d.hasExtraBattery) badges.push(['#22d3ee30', '#22d3ee', `🔋 x${d.extraBatteryCount || 1}`]); // v25
   if (d.hasStaplesDebrief && !d.isFlexRoute) badges.push(['#a78bfa40', '#a78bfa', '🏪 STAPLES']);
   if (d._manuallyRescued && !d.isSweeper && !d.isHelper) badges.push(['#f59e0b40', '#f59e0b', '🆘 Swept']);
   if (noBreakWarn) badges.push(['#f59e0b40', '#f59e0b', '⚠️ NO BREAK']);
@@ -2023,6 +2025,7 @@ function openModal(tid) {
       <div class="info-box"><span class="label">Last Delivery</span><div class="val" style="font-size:11px">${fmt(d.lastDeliveryTime)}</div></div>
       <div class="info-box"><span class="label">First Delivery</span><div class="val" style="font-size:11px">${fmt(d.firstDeliveryTime)}</div></div>
       <div class="info-box"><span class="label">Extra Phones</span><div class="val" style="font-size:11px;color:var(--orange)">${d.extraPhoneCount || 0}</div></div>
+      <div class="info-box"><span class="label">Extra Batteries</span><div class="val" style="font-size:11px;color:#22d3ee">${d.extraBatteryCount || 0}</div></div>
       ${routesHtml}
     </div>
 
@@ -2057,6 +2060,12 @@ function openModal(tid) {
         <button class="act-btn" onclick="sendCommand('extraPhone','${tid}',0,{delta:-1});closeModal()" style="width:24px;padding:2px">−</button>
         <span style="color:var(--amber);font-weight:700;min-width:16px;text-align:center">${d.extraPhoneCount || 0}</span>
         <button class="act-btn" onclick="sendCommand('extraPhone','${tid}',0,{delta:1});closeModal()" style="width:24px;padding:2px">+</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:10px;color:#22d3ee">
+        <span>🔋 Extra Batteries:</span>
+        <button class="act-btn" onclick="sendCommand('extraBattery','${tid}',0,{delta:-1});closeModal()" style="width:24px;padding:2px">−</button>
+        <span style="color:var(--amber);font-weight:700;min-width:16px;text-align:center">${d.extraBatteryCount || 0}</span>
+        <button class="act-btn" onclick="sendCommand('extraBattery','${tid}',0,{delta:1});closeModal()" style="width:24px;padding:2px">+</button>
       </div>
     </div>
 
@@ -2624,6 +2633,7 @@ function _buildMobileLocalSnapshot() {
     flexRoutes: drivers.filter(d => d.isFlexRoute).map(f => ({ route: f.route, progress: f.stopsTotal > 0 ? Math.round((f.stopsCompleted / f.stopsTotal) * 100) : 0 })),
     staples: drivers.filter(d => d.isStaples).map(s => ({ name: s.name, route: s.route })),
     rescues: [], leadSweeper: null, helpingHands: [],
+    helpResponses: [], // v25: present in cloud snapshot; empty in local-only fallback
     events: [],
     handEntered: {
       dispatcher1: '', dispatcher2: '',
@@ -2721,6 +2731,22 @@ function _renderMobileDailyReport(s, fetchErr) {
       </div>`;
     }).filter(Boolean).join('');
     return items || '<div class="dly-m-empty">No helpers over 3 stops</div>';
+  })();
+
+  // v25: Accepted / Refused to Help — manual marks pushed from A1 (refusals listed first).
+  const helpRespHtml = (() => {
+    const list = (s.helpResponses || []).slice()
+      .sort((a, b) => (a.refused === b.refused) ? 0 : (a.refused ? -1 : 1));
+    if (!list.length) return '<div class="dly-m-empty">No accepted/refused marks</div>';
+    return list.map(h => {
+      const icon = h.refused ? '👎' : '👍';
+      const color = h.refused ? '#fca5a5' : '#86efac';
+      const reason = (h.refused && h.reason) ? ` <span style="color:#5b7793;">— ${_mEsc(h.reason)}</span>` : '';
+      const route = h.route ? ` <span style="color:#5b7793;">(${_mEsc(h.route)})</span>` : '';
+      return `<div class="dly-m-rank">
+        <span style="flex:1;color:${color};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;">${icon} ${_mEsc(h.name)}${route}${reason}</span>
+      </div>`;
+    }).join('');
   })();
 
   // V23: Safety events list (de-duplicated)
@@ -2940,7 +2966,7 @@ function _renderMobileDailyReport(s, fetchErr) {
     </style>
     <div style="margin-bottom:10px;">
       <div class="dly-m-eyebrow"><span class="dly-m-pulse-dot"></span>Live Operations Monitor</div>
-      <div class="dly-m-title">Daily Report <span class="dly-m-title-tag">v23</span></div>
+      <div class="dly-m-title">Daily Report <span class="dly-m-title-tag">v25</span></div>
       <div class="dly-m-meta">
         <b>${_mEsc(s.station || 'global')}</b> · <b>${_mEsc(s.lastDate)}</b> · ${k.activeCount}/${k.totalCount} active
         ${isMerged ? ' · <span style="color:#22c55e;">merged ☁</span>' : ' · <span style="color:#f59e0b;">local only</span>'}
@@ -2967,6 +2993,11 @@ function _renderMobileDailyReport(s, fetchErr) {
     <div class="dly-m-section">
       <div class="dly-m-section-title"><span>🤝 Helpers</span></div>
       ${helpersHtml}
+    </div>
+
+    <div class="dly-m-section">
+      <div class="dly-m-section-title"><span style="color:#86efac;">🙋 Accepted / Refused to Help</span><span style="color:#5b7793;">${(s.helpResponses || []).length}</span></div>
+      ${helpRespHtml}
     </div>
 
     <div class="dly-m-section">
