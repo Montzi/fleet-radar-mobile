@@ -1,31 +1,51 @@
 <!DOCTYPE html>
 <!--
-  Mobile Amazon Radar — viewer (A2)
-  v24 (4-BUG PASS — parity with A1 V21.85):
-  - FIX #1 INSP-DONE SINKS TO BOTTOM: inspection-done drivers were sorted in with
-    everyone else (and an inspected sweeper/pinned driver even floated to top).
-    The list now sinks inspectionDone drivers to the very bottom in every sort
-    mode (newest inspection first among them), BEFORE the pinned/sweeper tiers —
-    mirroring A1 getSortedDriversList (V21.85, "inspection-done always sinks to
-    bottom in every sort mode").
-  - FIX #2 MODAL HEADER ALWAYS VISIBLE: the bottom-sheet modal could open with its
-    top edge (route name + ✕ close) tucked under the iOS status bar / notch, so the
-    user had to scroll up to reach the X. The card now reserves safe-area top space
-    and the route-name + ✕ row is a sticky header that stays pinned while the body
-    scrolls. Contact details moved just below the sticky bar.
-  - FIX #3 STUCK-ON-BREAK GUARD: a driver could show "☕ BREAK (109m)" forever when
-    the upstream break-END event was lost. The viewer now mirrors A1's activity-based
-    break-end (V20.1.17): a delivery logged AFTER the break started — or a break that
-    has run past a sane cap — is treated as break-over, so onBreak()/effState() drive
-    the badge, card color, state text, filter and count consistently (no more runaway).
-  - FIX #4 LOADING STATE + FAST COLD-START: on first load an empty/late pull showed a
-    bare "No drivers in this filter". A list state-machine now shows a spinner +
-    "Connecting to <station>…" until real data arrives, and cold-start retries every
-    4s (up to ~32s) so drivers appear right away instead of after the 30s cycle; only
-    after that does it settle to "No data yet for <station> · auto-refreshing".
-  - (carried) KEEP-LAST-GOOD ANTI-FLICKER: empty/blip pulls for a station we already
-    have data for are ignored — last good list stays on screen ("● N drv · last
-    update Xm ago"). Pull uses the POST CDN-bypass.
+  Mobile Amazon Radar — A2
+  v27 — THE PHONE AND THE DESKTOP ARE NOW PEERS. REQUIRES GAS v3.31 + A1 v24.04.
+
+  THE GOAL WAS ONE MINUTE, BOTH DIRECTIONS, AND IT IS MET BY POLLING SHORT AND
+  PUSHING IMMEDIATELY rather than by polling once and hoping. A local edit
+  pushes on the spot, coalesced so an import of 131 vans is one request and not
+  131; the other side pulls every 25-30s and on tab focus. Worst case is one
+  poll plus a round trip, not a full interval on each side in series.
+
+  THE VEHICLE LIST AND THE DRIVER LIST ARE SHARED STORES NOW. Both lived in
+  A1's GM_setValue plus localStorage, which is per-browser — the phone could
+  neither read them nor contribute. Two global documents hold them and the
+  backend merges PER RECORD, not per document. That distinction is the whole
+  design: a whole-file last-write-wins is right for the debrief, which is one
+  piece of prose with one author at a time, and wrong for a list, where the desk
+  may add three vans while this phone corrects a plate and whichever saved
+  second would silently erase the other's work. Every record carries its own _ts
+  and is judged alone. It also makes a full push safe and idempotent, so neither
+  side has to track deltas.
+  DELETES ARE TOMBSTONES, because dropping a key cannot express a deletion — the
+  other side still holds the record and hands it straight back on the next
+  merge, so a removed row would reappear a minute later. A delete writes
+  {_deleted,_ts} and outranks any older live copy; every list, index and table
+  filters them out.
+
+  A 🗂 DATABASE SCREEN to go with it: both lists, searchable, editable, with the
+  same column-detecting paste A1 uses — order does not matter, the quote-aware
+  splitter survives the line breaks inside real spreadsheet cells, and a roster
+  row whose transporter-ID cell is blank is skipped rather than filed under the
+  driver's own name.
+
+  VIN → VAN ON THE PHONE. The van number now resolves from the shared list by
+  VIN first, the order A1 v23.95 settled on: a VIN names the van Cortex says the
+  driver is physically in, while the TID map names whatever a spreadsheet row
+  last claimed. A last-five suffix shared by two vans resolves to neither.
+
+  BREAK CONTEXT ON AN IDLE DRIVER (A1 v24.02). A driver idle an hour with
+  forty-three of those minutes on break is not the same problem as one idle an
+  hour flat, and the card made them look identical.
+
+  Previous v26: the debrief read a per-station file nothing writes, so desktop →
+  mobile never worked; reads now go through POST debriefPull against the global
+  document, and saves carry shiftDate and savedAt so A1's 2:30 AM shift gate and
+  last-write-wins accept them. Behind/ahead counts on cards and modal with flex
+  un-excluded; Nearest Extra Phone; driver identity off the record; nobody is
+  active after midnight.
 -->
 <html lang="en">
 <head>
@@ -766,6 +786,7 @@ html, body {
     <div class="toolbar">
       <button class="tool-btn" onclick="openDebrief()">📋 Debrief</button>
       <button class="tool-btn" id="syncBtn" onclick="forceRefresh()">☁️ Sync</button>
+      <button class="tool-btn" onclick="openLists()">🗂 Database</button>
       <button class="tool-btn" onclick="openStaples()">🏪 Staples</button>
       <button class="tool-btn" onclick="openMap()">🗺 Map</button>
       <button class="tool-btn" onclick="openReports()">📊 Reports</button>
@@ -869,6 +890,16 @@ html, body {
     <div class="debrief-body" id="staplesBody"></div>
   </div>
 
+  <!-- ═══ Shared Lists Overlay (v27) ═══ -->
+  <div class="debrief-overlay" id="listsOverlay">
+    <div class="debrief-hdr">
+      <button class="hdr-btn" onclick="closeLists()">← Back</button>
+      <span style="font-weight:700;color:var(--green)">🗂 Fleet Database</span>
+      <span></span>
+    </div>
+    <div class="debrief-body" id="listsBody"></div>
+  </div>
+
   <!-- ═══ Settings Overlay ═══ -->
   <div class="debrief-overlay" id="settingsOverlay">
     <div class="debrief-hdr">
@@ -893,7 +924,10 @@ html, body {
 // ── Configuration ──
 const CLOUD_URL = 'https://script.google.com/macros/s/AKfycbyh90Qa9FuE_tHyZ9T-rQyOOtwFeZxVt-4iUB_LOtyoupoBU8xp-xPUKCXF1EJrjzPCPQ/exec';
 const STATIONS = ['DJE5', 'DJZ6', 'DJZ8', 'DYY6', 'DJE1', 'DNK7', 'DEW5', 'DNK2', 'DNJ4']; // v24: full canonical list (was 4)
-const REFRESH_MS = 30000;
+// v27: 25s, matching A1's own cloud push cadence. The target is that anything
+// entered on either side is visible on the other inside a minute; with a 25s
+// pull against a 25s push the worst case is one of each plus a round trip.
+const REFRESH_MS = 25000;
 const LS_URL = 'dispatch_radar_url';
 const LS_STA = 'dispatch_radar_station';
 const LS_PIN = 'dispatch_radar_pin';
@@ -1002,6 +1036,7 @@ function boot() {
   loadNotifyPrefs();
   fetchData();
   fetchDriverInfo();
+  startSharedSync();          // v27: vehicle + driver lists, two-way with A1
   refreshTimer = setInterval(fetchData, REFRESH_MS);
   // Refresh driver info every 5 minutes
   setInterval(fetchDriverInfo, 300000);
@@ -1226,12 +1261,16 @@ function forceRefresh() {
 // The map is persisted as memory.vehicleMapCache and pushed to cloud.
 function getVehicleId(d) {
   if (!d || !d.id) return '';
-  // Primary: vehicleMapCache (authoritative source from desktop)
+  // v27: same order A1 v23.95 settled on. A VIN names the van Cortex says the
+  // driver is physically in; the TID map names whatever a spreadsheet row last
+  // claimed, which goes stale the moment anyone swaps a vehicle. So the VIN
+  // route is tried first, against the shared vehicle list this phone now holds.
+  const vin = d.cortexVin || d.lastKnownVin || '';
+  if (vin) { const v = vinToVan(vin); if (v) return v; }
+  if (d.vehicleId) return d.vehicleId.replace(/[()\[\]]/g, '').trim().toUpperCase();
   const cache = memory.vehicleMapCache || {};
   const raw = cache[d.id] || '';
   if (raw) return raw.replace(/[()\[\]]/g, '').trim().toUpperCase();
-  // Fallback: driver.vehicleId (may be set in some cases)
-  if (d.vehicleId) return d.vehicleId.replace(/[()\[\]]/g, '').trim().toUpperCase();
   return '';
 }
 
@@ -1735,8 +1774,25 @@ function buildCard(d) {
   if (d.hasStaplesDebrief && !d.isFlexRoute) badges.push(['#a78bfa40', '#a78bfa', '🏪 STAPLES']);
   if (d._manuallyRescued && !d.isSweeper && !d.isHelper) badges.push(['#f59e0b40', '#f59e0b', '🆘 Swept']);
   if (noBreakWarn) badges.push(['#f59e0b40', '#f59e0b', '⚠️ NO BREAK']);
-  if (d.progressStatus === 'BEHIND' && !d.isSweeper && !d.isFlexRoute && !d.inspectionDone) badges.push(['#ef444440', '#ef4444', 'BEHIND']);
-  if (d.progressStatus === 'AT_RISK' && !d.isSweeper && !d.isFlexRoute && !d.inspectionDone) badges.push(['#ef444440', '#ef4444', 'AT RISK']);
+  // ── v26: THE COUNT, AND FLEX IS NO LONGER EXCLUDED (A1 v23.97 / v24.01) ──
+  // Two changes, both already fixed on the desktop and both still wrong here.
+  // (1) The badge read "BEHIND" with no number while A1's card has shown the
+  // stop count since v23.63 — and the count is already in the payload the phone
+  // pulls, as _scheduleStopsBehind, because the desktop deep-clones its whole
+  // memory into the cloud push. It was arriving all along and being dropped on
+  // the floor. (2) !d.isFlexRoute sat in both gates, so an AT or VT driver could
+  // never show behind however far behind they were. A sweeper's stops belong to
+  // other drivers so the exclusion is right for them; a flex driver owns their
+  // block outright. Same reasoning, same fix as the desktop.
+  const _behindN = Number(d._scheduleStopsBehind) || 0;
+  const _aheadN  = Number(d._scheduleStopsAhead)  || 0;
+  const _schedOk = !d.isSweeper && !d.inspectionDone;
+  if (d.progressStatus === 'BEHIND' && _schedOk) badges.push(['#ef444440', '#ef4444', (_behindN > 0 ? _behindN + ' ' : '') + 'BEHIND']);
+  if (d.progressStatus === 'AT_RISK' && _schedOk) badges.push(['#ef444440', '#ef4444', (_behindN > 0 ? _behindN + ' ' : '') + 'AT RISK']);
+  // Ahead keeps A1's own two floors: more than ten stops actually delivered and
+  // a count above zero, so a light early stem cannot read as ahead of schedule.
+  if (d.progressStatus === 'AHEAD' && _schedOk && !onBreak(d) && (d.stopsCompleted || 0) > 10 && _aheadN > 0)
+    badges.push(['#10b98140', '#10b981', _aheadN + ' AHEAD']);
   if (d.manuallyDelivered && !d.inspectionDone) badges.push(['#10b98140', '#10b981', '✅ MANUAL']);
   if (d.gotGas && d.state !== 'GETTING GAS') badges.push(['#f59e0b40', '#fde68a', '⛽✅']);
   if (d.coveredBySweeper && !d.isSweeper && !d.isFlexRoute) badges.push(['#fb923c40', '#fb923c', `🧹 ${d.coveredBySweeperName || 'Sweeper'}`]);
@@ -1830,11 +1886,18 @@ function openModal(tid) {
   const stopsT = d.stopsTotal || 0;
 
   // Contact info from driverInfoMap
+  // v26: A1 v23.96 put the permanent driver list on the record itself, so the
+  // email and the home station now ride in the cloud payload as driverEmail /
+  // homeStation. Those are preferred over the separate driverInfo endpoint,
+  // which is a second fetch that can fail independently and often has not been
+  // populated at all. The endpoint stays as the fallback for personal phone and
+  // flex pass, which the record does not carry.
   const info = getBestDriverInfo(d.name) || {};
   const workPhone = d.phone || 'N/A';
   const personalPhone = info.personalPhone || 'N/A';
-  const workEmail = info.email || 'N/A';
+  const workEmail = d.driverEmail || info.email || 'N/A';
   const flexPass = info.flexPass || 'N/A';
+  const homeStation = d.homeStation || '';
 
   // GPS section
   let gpsHtml = '';
@@ -1864,6 +1927,48 @@ function openModal(tid) {
       breakHtml += `<div style="font-size:10px;color:#93c5fd;padding:2px 0;border-bottom:1px solid var(--bg3)">${fmt(b.start)} → ${endStr} (${dur}m)</div>`;
     });
     breakHtml += '</div>';
+  }
+
+  // ── v27 BREAK CONTEXT (A1 v24.02) ────────────────────────────────────────
+  // A driver idle for an hour with forty-three of those minutes on break is not
+  // the same problem as one idle for an hour flat, and the card made them look
+  // identical. The same line A1 puts on its inactivity alerts goes here, and it
+  // leads with whatever settles the question: a break running now settles it
+  // outright, one that ended inside the window nearly does, one that ended
+  // before it began does not — and saying how long ago it ended is what makes
+  // that visible rather than leaving the reader to do the arithmetic.
+  function _breakContextLine(dd, idleMins) {
+    try {
+      const list = Array.isArray(dd && dd.breaks) ? dd.breaks.filter(b => b && b.start) : [];
+      const now = Date.now(), mins = ms => Math.max(0, Math.round(ms / 60000));
+      const open = list.find(b => !b.end);
+      if (open) return '☕ ON BREAK since ' + fmt(open.start) + ' (' + mins(now - open.start) + ' min so far) — this is why.';
+      if (!list.length) return '☕ No breaks logged today.';
+      const sorted = list.slice().sort((a, b) => (a.start || 0) - (b.start || 0));
+      const last = sorted[sorted.length - 1];
+      const total = sorted.reduce((t, b) => t + mins((b.end || now) - b.start), 0);
+      let covered = 0;
+      if (Number.isFinite(idleMins) && idleMins > 0) {
+        const ws = now - idleMins * 60000;
+        sorted.forEach(b => { const a = Math.max(b.start, ws), z = Math.min(b.end || now, now); if (z > a) covered += (z - a); });
+      }
+      const cm = mins(covered);
+      let line = '☕ Last break ' + fmt(last.start) + '–' + fmt(last.end) + ' (' + mins(last.end - last.start)
+               + ' min), ended ' + mins(now - last.end) + ' min ago.';
+      if (sorted.length > 1) line += ' ' + sorted.length + ' breaks, ' + total + ' min total.';
+      if (cm > 0) line += ' ' + cm + ' of the last ' + idleMins + ' min were on break' + (cm >= idleMins * 0.5 ? ' — likely the reason.' : '.');
+      return line;
+    } catch (_) { return ''; }
+  }
+  let breakCtxHtml = '';
+  {
+    const idleMins = d.currentInactiveStart ? Math.floor((Date.now() - d.currentInactiveStart) / 60000) : 0;
+    if (idleMins >= 20 || d.state === 'INACTIVE') {
+      const ln = _breakContextLine(d, idleMins);
+      if (ln) breakCtxHtml = `<div class="modal-section" style="border-left:3px solid #f59e0b">
+        <div class="modal-section-title" style="color:var(--amber)">⏸ Idle ${idleMins} min — why?</div>
+        <div style="font-size:10px;color:#93c5fd;line-height:1.5">${ln}</div></div>`;
+    }
   }
 
   // Inactivity log
@@ -1992,6 +2097,7 @@ function openModal(tid) {
       <div style="font-size:10px;color:var(--fg2)">
         Flex: <span style="color:#e5e7eb;user-select:all">${flexPass}</span>
       </div>
+      ${homeStation ? `<div style="font-size:10px;color:var(--fg2)">Home station: <span style="color:#93c5fd;font-weight:700">${homeStation}</span></div>` : ''}
     </div>
 
     <!-- Status + Pace -->
@@ -1999,6 +2105,25 @@ function openModal(tid) {
       <div class="info-box" style="text-align:center"><span class="label">Status</span><div class="val" style="color:${c};font-size:11px">${state}</div></div>
       <div class="info-box" style="text-align:center"><span class="label">Pace</span><div class="val">${d.pace || '—'}</div></div>
     </div>
+    ${(() => {
+      // v26: the schedule figure, with the same source label the desktop card
+      // carries on hover — a bare number nobody can place is worth little.
+      const b = Number(d._scheduleStopsBehind) || 0, a = Number(d._scheduleStopsAhead) || 0;
+      if (d.isSweeper || d.inspectionDone) return '';
+      const st = d.progressStatus;
+      if (st === 'BEHIND' || st === 'AT_RISK') {
+        return `<div class="info-box" style="text-align:center;margin-bottom:8px;border-left:3px solid #ef4444">
+          <span class="label">Schedule</span>
+          <div class="val" style="color:#ef4444">${b > 0 ? b + ' stops behind' : (st === 'BEHIND' ? 'Behind' : 'At risk')}</div>
+          ${b > 0 ? '' : '<div style="font-size:8px;color:var(--fg3);margin-top:2px">count not in this sync yet</div>'}
+        </div>`;
+      }
+      if (st === 'AHEAD' && a > 0 && (d.stopsCompleted || 0) > 10) {
+        return `<div class="info-box" style="text-align:center;margin-bottom:8px;border-left:3px solid #10b981">
+          <span class="label">Schedule</span><div class="val" style="color:#10b981">${a} stops ahead</div></div>`;
+      }
+      return '';
+    })()}
 
     <!-- Progress bar -->
     <div style="margin-bottom:8px;background:var(--bg2);padding:6px 8px;border-radius:6px">
@@ -2042,6 +2167,61 @@ function openModal(tid) {
 
     ${gpsHtml}
 
+    ${(() => {
+      // ── v26 NEAREST EXTRA PHONE (A1 v23.98 / v23.99) ──────────────────────
+      // Same rules as the desktop: extra phones come from the morning debrief
+      // and nowhere else, so with no debrief entered this says so rather than
+      // rendering an empty list a dispatcher would read as "nobody has one" —
+      // those are different answers and must not look alike. One station per
+      // list, per v23.99. Finished drivers rank last but are not dropped: the
+      // phone may still be in the van. Distance is straight-line.
+      try {
+        const me = memory.drivers && memory.drivers[tid];
+        const lat = me && me.lat, lon = me && me.lon;
+        const hdr = '<div class="modal-section"><div class="modal-section-title" style="color:#f97316">📱 Nearest Extra Phone</div>';
+        const hasDebrief = !!(_debriefLoadedRaw || (memory && memory._debriefRaw));
+        if (!hasDebrief && !Object.values(memory.drivers || {}).some(x => x && x.hasExtraPhone))
+          return hdr + '<div style="font-size:10px;color:#fbbf24">Please add morning debrief</div><div style="font-size:9px;color:var(--fg3);margin-top:3px">Extra phones are read from the morning debrief.</div></div>';
+        if (!Number.isFinite(lat) || !Number.isFinite(lon))
+          return hdr + '<div style="font-size:10px;color:var(--fg3)">No GPS for this driver yet.</div></div>';
+        const R = 6371000, tr = x => x * Math.PI / 180;
+        const dist = (a, b, c, e) => {
+          const dl = tr(c - a), dn = tr(e - b);
+          const h = Math.sin(dl / 2) ** 2 + Math.cos(tr(a)) * Math.cos(tr(c)) * Math.sin(dn / 2) ** 2;
+          return 2 * R * Math.asin(Math.sqrt(h));
+        };
+        const cands = [];
+        Object.entries(memory.drivers || {}).forEach(([k, o]) => {
+          if (!o || k === tid || o.isRemoved || o.isBaseline) return;
+          if (!o.hasExtraPhone || !((o.extraPhoneCount || 0) > 0)) return;
+          if (!Number.isFinite(o.lat) || !Number.isFinite(o.lon)) return;
+          cands.push({ k, name: abbr(o.name || k), van: getVehicleId({ id: k, ...o }),
+                       n: o.extraPhoneCount || 1, lat: o.lat, lon: o.lon,
+                       state: o.state || '', m: dist(lat, lon, o.lat, o.lon) });
+        });
+        if (!cands.length)
+          return hdr + '<div style="font-size:10px;color:var(--fg3)">No driver at ' + currentStation + ' with an extra phone has reported a position.</div></div>';
+        const done = c => /FINISH|INACTIVE/i.test(c.state);
+        const byD = (a, b) => a.m - b.m;
+        const top = cands.filter(c => !done(c)).sort(byD).concat(cands.filter(done).sort(byD)).slice(0, 3);
+        return hdr + top.map(c => {
+          const mi = c.m / 1609.34, ms = mi < 10 ? mi.toFixed(1) : Math.round(mi);
+          return `<div style="display:flex;align-items:center;gap:6px;background:#0f172a;border-left:3px solid #f97316;border-radius:6px;padding:6px 8px;margin-bottom:4px">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:11px;font-weight:700;color:#e2e8f0">${c.name}
+                ${c.van ? `<span style="font-size:8px;color:#0f172a;background:#cbd5e1;border-radius:3px;padding:1px 4px;margin-left:3px">${c.van}</span>` : ''}
+                <span style="font-size:8px;color:#0f172a;background:#f97316;border-radius:3px;padding:1px 4px;margin-left:3px">${ms} mi</span>
+                ${c.n > 1 ? `<span style="font-size:8px;color:#0f172a;background:#fbbf24;border-radius:3px;padding:1px 4px;margin-left:3px">×${c.n}</span>` : ''}
+                ${done(c) ? `<span style="font-size:8px;color:#94a3b8;border:1px solid #334155;border-radius:3px;padding:1px 4px;margin-left:3px">${c.state}</span>` : ''}
+              </div>
+              <div style="font-size:9px;color:#94a3b8;margin-top:2px">${c.lat.toFixed(5)}, ${c.lon.toFixed(5)}</div>
+            </div>
+            <a href="https://maps.apple.com/?ll=${c.lat},${c.lon}" target="_blank" style="flex-shrink:0;background:#1e293b;border:1px solid #f9731666;color:#f97316;border-radius:6px;padding:8px 10px;text-decoration:none;font-size:14px">📍</a>
+          </div>`;
+        }).join('') + '<div style="font-size:8px;color:var(--fg3)">From the morning debrief · ' + currentStation + ' only</div></div>';
+      } catch (_) { return ''; }
+    })()}
+
     <!-- ═══ MANUAL ACTIONS ═══ -->
     <div class="modal-section">
       <div class="modal-section-title" style="color:var(--red)">🔧 Actions</div>
@@ -2069,6 +2249,7 @@ function openModal(tid) {
       </div>
     </div>
 
+    ${breakCtxHtml}
     ${paceChartHtml}
     ${sweptHtml}
     ${breakHtml}
@@ -2147,6 +2328,110 @@ function closeMap() {
 //  DEBRIEF (Morning + Nightly toggle)
 // ═══════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  v26 DEBRIEF SYNC — THE MOBILE SIDE WAS READING A FILE NOBODY WRITES.
+//
+//  Asked for directly: a debrief entered on the phone must show up on the
+//  desktop A1, and vice versa. Half of that was already true and half of it
+//  could never have worked.
+//
+//  WHAT WAS BROKEN. The loader used GET ?action=debrief&station=<STATION>,
+//  which in the Apps Script reads FleetRadarDebrief_<STATION>.json — a
+//  per-station file that NOTHING in the backend ever writes. Every write, from
+//  A1 and from here, goes to the single FleetRadarDebrief_GLOBAL.json. So the
+//  phone opened on an empty textarea no matter what the desktop had entered,
+//  and a save from here replaced the real document with whatever the blank box
+//  contained. Desktop → mobile was not slow, it was wired to a dead file.
+//  (GET is also CDN-cached by Google for up to ~30 minutes, so even against the
+//  right file it would have been stale. A1 uses POST for exactly this reason.)
+//
+//  WHAT IS RIGHT NOW. Reads go through POST ?action=debriefPull&station=global,
+//  the same call A1 makes, against the same file — CDN-bypassed and current.
+//
+//  AND THE SAVE NOW SPEAKS A1'S DIALECT. A1 accepts a cloud debrief only if it
+//  is (a) for the CURRENT shift and (b) newer than its own copy. Its shift day
+//  rolls at 2:30 AM, not midnight, and it reads savedAt to decide "newer". The
+//  old mobile payload sent neither — just a raw calendar date — so a debrief
+//  typed on the phone between midnight and 2:30 AM was read as belonging to a
+//  different shift and silently discarded by every desktop that pulled it.
+//  Both fields are sent now, with the same 2:30 rule A1 uses.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// A1's operational day: rolls at 2:30 AM ET, not midnight. Same rule, same
+// output format (YYYY-MM-DD), so the two agree on what "today" means.
+function shiftDateET() {
+  const et = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  if (et.getHours() < 2 || (et.getHours() === 2 && et.getMinutes() < 30)) et.setDate(et.getDate() - 1);
+  return et.getFullYear() + '-' + String(et.getMonth() + 1).padStart(2, '0') + '-' + String(et.getDate()).padStart(2, '0');
+}
+
+let _debriefLoadedRaw = '';      // what the cloud last handed us
+let _debriefLoadedAt = 0;        // savedAt of that document
+let _debriefPollTimer = null;
+let _debriefDirty = false;       // the operator has typed since it loaded
+
+// The one read path. Returns the parsed doc or null.
+async function pullDebriefFromCloud() {
+  try {
+    const resp = await fetch(cloudUrl + '?action=debriefPull&station=global&_cb=' + Date.now(), {
+      method: 'POST', mode: 'cors', cache: 'no-cache',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ station: 'global' })
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return (data && data.raw) ? data : null;
+  } catch (e) {
+    console.warn('[Radar] debrief pull failed:', e && e.message);
+    return null;
+  }
+}
+
+// Poll while the sheet is open so an edit made on the desktop appears here
+// without the operator closing and reopening it. A document the operator has
+// started editing is never overwritten underneath them — they are told instead.
+async function _debriefPollTick() {
+  if (debriefMode !== 'morning') return;
+  const ta = document.getElementById('debriefText');
+  if (!ta) return;
+  const doc = await pullDebriefFromCloud();
+  if (!doc) return;
+  const ts = doc.savedAt || doc.lastUpdated || 0;
+  if (doc.raw === _debriefLoadedRaw) return;          // nothing new
+  if (ts <= _debriefLoadedAt) return;                 // not newer
+  if (_debriefDirty && ta.value.trim() !== _debriefLoadedRaw.trim()) {
+    const b = document.getElementById('debriefCloudNote');
+    if (b) {
+      b.style.display = '';
+      b.innerHTML = '⚠️ A newer debrief arrived from another device. '
+        + '<button class="hdr-btn" style="padding:2px 8px;font-size:10px" onclick="adoptCloudDebrief()">Load it</button> '
+        + '<span style="color:var(--fg3)">Saving will overwrite it.</span>';
+    }
+    window._debriefPendingDoc = doc;
+    return;
+  }
+  _debriefLoadedRaw = doc.raw;
+  _debriefLoadedAt = ts;
+  ta.value = doc.raw;
+  _debriefDirty = false;
+  parseAndShowDebrief(doc.raw);
+  showToast('Debrief updated from ' + (doc.source === 'mobile' ? 'another phone' : 'desktop'));
+}
+
+function adoptCloudDebrief() {
+  const doc = window._debriefPendingDoc;
+  if (!doc) return;
+  const ta = document.getElementById('debriefText');
+  if (ta) { ta.value = doc.raw; parseAndShowDebrief(doc.raw); }
+  _debriefLoadedRaw = doc.raw;
+  _debriefLoadedAt = doc.savedAt || doc.lastUpdated || 0;
+  _debriefDirty = false;
+  window._debriefPendingDoc = null;
+  const b = document.getElementById('debriefCloudNote');
+  if (b) b.style.display = 'none';
+  showToast('Loaded the newer debrief');
+}
+
 async function openDebrief() {
   document.getElementById('debriefOverlay').classList.add('open');
   debriefMode = 'morning';
@@ -2155,6 +2440,7 @@ async function openDebrief() {
 
 function closeDebrief() {
   document.getElementById('debriefOverlay').classList.remove('open');
+  if (_debriefPollTimer) { clearInterval(_debriefPollTimer); _debriefPollTimer = null; }  // v26
 }
 
 function switchDebriefMode(mode) {
@@ -2175,27 +2461,38 @@ async function renderDebriefBody() {
         <button class="debrief-tab active" onclick="switchDebriefMode('morning')">☀️ Morning</button>
         <button class="debrief-tab" onclick="switchDebriefMode('nightly')">🌙 Nightly</button>
       </div>
-      <p style="font-size:11px;color:var(--fg2);margin-bottom:8px">Paste or edit the morning debrief. Syncs with desktop.</p>
+      <p style="font-size:11px;color:var(--fg2);margin-bottom:4px">Paste or edit the morning debrief. Saves to the same document the desktop A1 reads.</p>
+      <div id="debriefCloudState" style="font-size:10px;color:var(--fg3);margin-bottom:6px">Loading…</div>
+      <div id="debriefCloudNote" style="display:none;font-size:10px;color:#fbbf24;background:#1c1408;border:1px solid #78350f;border-radius:6px;padding:6px 8px;margin-bottom:6px"></div>
       <textarea class="debrief-textarea" id="debriefText" placeholder="Paste morning debrief here..."></textarea>
       <div id="debriefParsed" style="margin-top:10px"></div>
       <p style="font-size:8px;color:var(--fg3);text-align:center;margin-top:12px;font-style:italic">Mobile Amazon Radar — By: Andrismar T.</p>
     `;
 
-    // Load existing debrief from cloud
-    try {
-      const resp = await fetch(cloudUrl + '?action=debrief&station=' + currentStation);
-      const data = await resp.json();
-      const ta = document.getElementById('debriefText');
-      if (data && data.raw) {
-        ta.value = data.raw;
-        parseAndShowDebrief(data.raw);
-      } else {
-        ta.value = '';
-      }
-    } catch (e) {
-      const ta = document.getElementById('debriefText');
-      if (ta) ta.placeholder = 'Could not load debrief. Paste it here...';
+    // v26: read the file that is actually written — POST debriefPull against the
+    // GLOBAL document, exactly as A1 does. See the note above openDebrief.
+    const _doc = await pullDebriefFromCloud();
+    const ta = document.getElementById('debriefText');
+    if (!ta) return;
+    if (_doc) {
+      ta.value = _doc.raw;
+      _debriefLoadedRaw = _doc.raw;
+      _debriefLoadedAt = _doc.savedAt || _doc.lastUpdated || 0;
+      _debriefDirty = false;
+      parseAndShowDebrief(_doc.raw);
+      const _who = _doc.source === 'mobile' ? 'phone' : 'desktop';
+      const _when = _debriefLoadedAt ? new Date(_debriefLoadedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
+      const _st = document.getElementById('debriefCloudState');
+      if (_st) _st.textContent = 'Loaded from cloud · last saved on ' + _who + (_when ? ' at ' + _when : '');
+    } else {
+      ta.value = '';
+      _debriefLoadedRaw = ''; _debriefLoadedAt = 0; _debriefDirty = false;
+      const _st = document.getElementById('debriefCloudState');
+      if (_st) _st.textContent = 'No debrief saved yet for this shift.';
     }
+    ta.addEventListener('input', () => { _debriefDirty = true; });
+    if (_debriefPollTimer) clearInterval(_debriefPollTimer);
+    _debriefPollTimer = setInterval(_debriefPollTick, 20000);
   } else {
     title.innerHTML = '🌙 Nightly Debrief';
     saveBtn.style.display = 'none';
@@ -2490,17 +2787,49 @@ async function saveDebriefToCloud() {
   btn.textContent = '⏳ Saving...';
 
   const nowET = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const payload = { raw: text, date: nowET.toDateString(), station: currentStation, source: 'mobile' };
+  // v26: shiftDate and savedAt are what A1 gates on. Without shiftDate it applies
+  // its 2:30 AM rule to the plain calendar date and throws away anything typed
+  // between midnight and 2:30; without savedAt its last-write-wins check has
+  // nothing to compare and keeps its own copy. Both are sent now.
+  const payload = {
+    raw: text,
+    date: nowET.toDateString(),          // legacy field A1 still reads
+    shiftDate: shiftDateET(),            // the 2:30-aligned key A1 actually prefers
+    savedAt: Date.now(),                 // last-write-wins stamp
+    lastUpdated: Date.now(),
+    station: currentStation,
+    source: 'mobile'
+  };
 
   try {
-    await fetch(cloudUrl + '?action=debrief&station=' + currentStation, {
-      method: 'POST', mode: 'cors',
+    const _r = await fetch(cloudUrl + '?action=debrief&station=' + currentStation, {
+      method: 'POST', mode: 'cors', cache: 'no-cache',
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify(payload)
     });
+    // The backend refuses a write that is older than what it holds and answers
+    // kept:true. That is not a failure, but it is emphatically not a save, and
+    // telling the operator "Saved" when their text was discarded is the worst
+    // thing this screen could do.
+    let _res = null; try { _res = await _r.json(); } catch (_) {}
+    if (_res && _res.kept) {
+      btn.textContent = '⚠️ Not saved';
+      showToast('A newer debrief is already in the cloud — reload before saving', true);
+      setTimeout(() => { btn.textContent = '💾 Save'; }, 2500);
+      _debriefPollTick();
+      return;
+    }
     btn.textContent = '✅ Saved!';
+    _debriefLoadedRaw = text;
+    _debriefLoadedAt = payload.savedAt;
+    _debriefDirty = false;
+    window._debriefPendingDoc = null;
+    const _note = document.getElementById('debriefCloudNote');
+    if (_note) _note.style.display = 'none';
+    const _st = document.getElementById('debriefCloudState');
+    if (_st) _st.textContent = 'Saved · the desktop picks this up within 60s';
     parseAndShowDebrief(text);
-    showToast('Debrief saved to cloud');
+    showToast('Debrief saved — desktop will pick it up within 60s');
     setTimeout(() => { btn.textContent = '💾 Save'; }, 2000);
   } catch (e) {
     btn.textContent = '✗ Failed';
@@ -2603,8 +2932,22 @@ function _buildMobileLocalSnapshot() {
     firstDeliveryTime: d.firstDeliveryTime || null,
     progressStatus: d.progressStatus || ''
   }));
-  const active = drivers.filter(d => d.state !== 'FINISHED' && !d.inspectionDone);
-  const finished = drivers.filter(d => d.state === 'FINISHED' || d.inspectionDone);
+  // ── v26: NOBODY IS ACTIVE AFTER MIDNIGHT (A1 v24.03) ────────────────────
+  // The desktop report led with "Active: 2/69" at 1:34 AM. Operations stop at
+  // midnight, so that cannot be true — the flag means "never closed out", not
+  // "still delivering", and reading it in the small hours silently converts one
+  // into the other. Past the cut-off the two are separated here exactly as they
+  // are on the desktop: Active is a live count and is zero, and the drivers who
+  // never closed out get their own label rather than being folded into Finished
+  // as though they had.
+  const _etNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const _opsClosed = (_etNow.getHours() < 2) || (_etNow.getHours() === 2 && _etNow.getMinutes() < 30);
+  const _stillOpen = drivers.filter(d => d.state !== 'FINISHED' && !d.inspectionDone);
+  const active   = _opsClosed ? [] : _stillOpen;
+  const unclosed = _opsClosed ? _stillOpen : [];
+  const finished = _opsClosed
+    ? drivers.filter(d => _stillOpen.indexOf(d) < 0)
+    : drivers.filter(d => d.state === 'FINISHED' || d.inspectionDone);
   const onTimeCount = drivers.filter(d => d.progressStatus !== 'BEHIND' && d.progressStatus !== 'AT_RISK').length;
   const onTimePct = drivers.length > 0 ? +((onTimeCount / drivers.length) * 100).toFixed(1) : 100;
   const noBreakCount = drivers.filter(d => d.hasNoBreaks && !d.isSweeper && !d.isHelper && !d.isFlexRoute).length;
@@ -2617,6 +2960,8 @@ function _buildMobileLocalSnapshot() {
     lastDate: new Date().toLocaleDateString('en-US'),
     kpi: {
       activeCount: active.length, totalCount: drivers.length, finishedCount: finished.length,
+      unclosedCount: unclosed.length, opsClosed: _opsClosed,   // v26
+      unclosedNames: unclosed.slice(0, 8).map(d => d.route ? (d.name + ' (' + d.route + ')') : d.name),
       onTimePct,
       criticalInactivity: 0, avgPaceMin: null,
       totalPkgsDelivered: drivers.reduce((s, d) => s + d.delivered, 0),
@@ -2665,9 +3010,9 @@ function _renderMobileDailyReport(s, fetchErr) {
   // KPI tiles (2-col on mobile)
   const kpiHtml = `
     <div class="dly-m-kpi-grid">
-      <div class="dly-m-kpi" style="border-left-color:#22c55e;">
-        <div class="dly-m-kpi-label">Active</div>
-        <div class="dly-m-kpi-val" style="color:#22c55e;">${k.activeCount}<span style="font-size:11px;opacity:0.6;">/${k.totalCount}</span></div>
+      <div class="dly-m-kpi" style="border-left-color:${k.opsClosed ? '#f59e0b' : '#22c55e'};">
+        <div class="dly-m-kpi-label">${k.opsClosed ? 'Unclosed' : 'Active'}</div>
+        <div class="dly-m-kpi-val" style="color:${k.opsClosed ? '#f59e0b' : '#22c55e'};">${k.opsClosed ? (k.unclosedCount || 0) : k.activeCount}<span style="font-size:11px;opacity:0.6;">/${k.totalCount}</span></div>
       </div>
       <div class="dly-m-kpi" style="border-left-color:#06b6d4;">
         <div class="dly-m-kpi-label">On-Time</div>
@@ -2966,9 +3311,9 @@ function _renderMobileDailyReport(s, fetchErr) {
     </style>
     <div style="margin-bottom:10px;">
       <div class="dly-m-eyebrow"><span class="dly-m-pulse-dot"></span>Live Operations Monitor</div>
-      <div class="dly-m-title">Daily Report <span class="dly-m-title-tag">v25</span></div>
+      <div class="dly-m-title">Daily Report <span class="dly-m-title-tag">v27</span></div>
       <div class="dly-m-meta">
-        <b>${_mEsc(s.station || 'global')}</b> · <b>${_mEsc(s.lastDate)}</b> · ${k.activeCount}/${k.totalCount} active
+        <b>${_mEsc(s.station || 'global')}</b> · <b>${_mEsc(s.lastDate)}</b> · ${k.opsClosed ? ((k.unclosedCount || 0) + '/' + k.totalCount + ' unclosed') : (k.activeCount + '/' + k.totalCount + ' active')}
         ${isMerged ? ' · <span style="color:#22c55e;">merged ☁</span>' : ' · <span style="color:#f59e0b;">local only</span>'}
         ${fetchErr ? ' · <span style="color:#ef4444;">cloud err</span>' : ''}
       </div>
@@ -3061,7 +3406,13 @@ function copyDailyReportSummary() {
   lines.push(`Daily Operations Report — ${s.station} — ${s.lastDate}`);
   lines.push(`Generated: ${new Date(s._ts).toLocaleString()}`);
   lines.push('');
-  lines.push(`Active: ${s.kpi.activeCount}/${s.kpi.totalCount} · Finished: ${s.kpi.finishedCount}`);
+  if (s.kpi.opsClosed) {
+    lines.push(`Active: 0/${s.kpi.totalCount} (operations closed) · Finished: ${s.kpi.finishedCount}`
+      + ((s.kpi.unclosedCount || 0) ? ` · Unclosed: ${s.kpi.unclosedCount}` : ''));
+    if ((s.kpi.unclosedNames || []).length) lines.push(`Never closed out: ${s.kpi.unclosedNames.join(', ')}`);
+  } else {
+    lines.push(`Active: ${s.kpi.activeCount}/${s.kpi.totalCount} · Finished: ${s.kpi.finishedCount}`);
+  }
   lines.push(`On-Time: ${s.kpi.onTimePct}% · Critical: ${s.kpi.criticalInactivity || 0}`);
   lines.push(`Pkgs: ${(s.kpi.totalPkgsDelivered || 0).toLocaleString()} · Returns: ${s.kpi.totalReturns}`);
   lines.push(`Stops: ${(s.kpi.totalStopsCompleted || 0).toLocaleString()}/${(s.kpi.totalStops || 0).toLocaleString()}`);
@@ -3180,6 +3531,379 @@ async function saveStaplesToCloud() {
   } catch(e) { showToast('Save failed', true); }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  v27 SHARED LISTS — THE VEHICLE LIST AND THE DRIVER LIST, EDITABLE HERE.
+//
+//  A1 kept both in GM_setValue plus localStorage, so the phone could neither
+//  read them nor contribute to them. GAS v3.31 puts them in two global
+//  documents and merges PER RECORD rather than per document: every record
+//  carries its own _ts and is judged alone, so the desk adding vans and this
+//  phone correcting a plate do not overwrite each other, and the newer edit of
+//  the same record wins. Deletes are tombstones, because dropping a key cannot
+//  express a deletion — the other side still holds the record and would hand it
+//  straight back on the next merge.
+//
+//  A full push is therefore safe: a stale record loses on its own merits. This
+//  side keeps a local copy so the lists work with no signal, pushes on every
+//  edit, and pulls every 30 s — worst case to the desktop is one poll plus a
+//  round trip.
+// ═══════════════════════════════════════════════════════════════════════════
+// ── The column-detecting parsers, ported from A1 v23.93/94/96 ───────────────
+// Roles are scored column by column rather than assumed by position, so the
+// paste works in whatever order the sheet happens to be in. The splitter is
+// quote-aware because a good number of cells in both sheets carry a line break
+// inside them, which a naive newline split tears in half.
+function _splitRows(t, sep) {
+  const s2 = String(t || '').replace(/\r\n?/g, '\n');
+  const rows = []; let cur = [], f = '', q = false;
+  for (let i = 0; i < s2.length; i++) {
+    const c = s2[i];
+    if (q) { if (c === '"') { if (s2[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; continue; }
+    if (c === '"') { q = true; continue; }
+    if (c === sep) { cur.push(f); f = ''; continue; }
+    if (c === '\n') { cur.push(f); rows.push(cur); cur = []; f = ''; continue; }
+    f += c;
+  }
+  cur.push(f);
+  if (cur.length > 1 || cur[0] !== '') rows.push(cur);
+  return rows.map(r => r.map(x => String(x || '').replace(/\s+/g, ' ').trim()))
+             .filter(r => r.some(v => v !== ''));
+}
+function _pickSep(t) {
+  const s2 = String(t || '');
+  if (s2.indexOf('\t') >= 0) return '\t';
+  if (s2.indexOf(',') >= 0) return ',';
+  if (s2.indexOf(';') >= 0) return ';';
+  return '\t';
+}
+function _detect(rows, probes) {
+  let W = 0; rows.forEach(r => { if (r.length > W) W = r.length; });
+  const colOf = i => rows.map(r => r[i] || '').filter(v => v !== '');
+  const frac = (i, fn) => { const c = colOf(i); return c.length ? c.filter(fn).length / c.length : 0; };
+  const role = {}, used = {};
+  probes.forEach(([name, fn, min]) => {
+    let best = -1, bs = 0;
+    for (let i = 0; i < W; i++) { if (used[i]) continue; const sc = frac(i, fn); if (sc > bs) { bs = sc; best = i; } }
+    if (best >= 0 && bs >= min) { role[name] = best; used[best] = true; }
+  });
+  return { role, used, W, colOf };
+}
+function _label(role, names) {
+  const byIdx = {}; Object.keys(role).forEach(k => { if (role[k] != null) byIdx[role[k]] = k; });
+  let max = -1; Object.keys(byIdx).forEach(i => { if (names[byIdx[i]] && +i > max) max = +i; });
+  const out = []; for (let i = 0; i <= max; i++) out.push(byIdx[i] && names[byIdx[i]] ? names[byIdx[i]] : '—');
+  return out.join(' · ');
+}
+const _isURL   = v => /:\/\//.test(v);
+const _isVIN   = v => /^[A-HJ-NPR-Z0-9]{17}$/i.test(v);
+const _isFuel  = v => /^[GD]$/i.test(v);
+const _isCam   = v => /^[CN]$/i.test(v);
+const _isVan   = v => /^[A-Z]{1,3}\d{1,4}$/i.test(v);
+const _isTID   = v => /^A[A-Z0-9]{9,19}$/.test(String(v || '').trim());
+const _isEmail = v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v || '').trim());
+const _isPhone = v => { const d = String(v || '').replace(/\D/g, ''); return d.length === 10 || (d.length === 11 && d[0] === '1'); };
+const _isName  = v => { const t = String(v || '').trim(); return t.length >= 3 && /[A-Za-z]/.test(t) && !/\d/.test(t) && !_isURL(t) && !_isEmail(t); };
+function _vinFromUrl(u) { const m = /[?&]vin=([A-Za-z0-9]{11,17})/.exec(String(u || '')); return m ? m[1].toUpperCase() : ''; }
+function _stnFromUrl(u) { const m = /[?&]station=([A-Za-z0-9]{3,6})/.exec(String(u || '')); return m ? m[1].toUpperCase() : ''; }
+function _normPhone(v) {
+  let d = String(v || '').replace(/\D/g, '');
+  if (d.length === 11 && d[0] === '1') d = d.slice(1);
+  if (d.length !== 10) return String(v || '').replace(/\s+/g, ' ').trim();
+  return d.slice(0, 3) + '-' + d.slice(3, 6) + '-' + d.slice(6);
+}
+
+function parseVehBlock(text) {
+  const rows = _splitRows(text, _pickSep(text));
+  if (!rows.length) return { rows: [], skipped: 0, label: '', why: 'nothing to read' };
+  if (rows[0].join(' ').toLowerCase().match(/\b(van|vin|plate|type)\b/) && !rows[0].some(_isURL) && !rows[0].some(_isVIN)) rows.shift();
+  const { role, used, W, colOf } = _detect(rows, [
+    ['url', _isURL, 0.6], ['vin', _isVIN, 0.6], ['fuel', _isFuel, 0.5], ['cam', _isCam, 0.5], ['van', _isVan, 0.6]
+  ]);
+  const left = []; for (let i = 0; i < W; i++) if (!used[i] && colOf(i).length / rows.length > 0.3) left.push(i);
+  left.sort((a, b) => new Set(colOf(a).map(x => x.toUpperCase())).size - new Set(colOf(b).map(x => x.toUpperCase())).size);
+  if (left.length) role.vtype = left[0];
+  if (left.length > 1) role.plate = left[1];
+  const out = []; let skipped = 0;
+  rows.forEach(r => {
+    const g = k => role[k] != null ? String(r[role[k]] || '').trim() : '';
+    const van = g('van').toUpperCase();
+    if (!van || !_isVan(van)) { skipped++; return; }
+    const url = g('url');
+    out.push({ van, vin: (g('vin') || _vinFromUrl(url)).toUpperCase(), vtype: g('vtype').toUpperCase(),
+               plate: g('plate').toUpperCase(), fuel: _isFuel(g('fuel')) ? g('fuel').toUpperCase() : '',
+               cam: /^C$/i.test(g('cam')) ? 'C' : '', url });
+  });
+  return { rows: out, skipped, label: _label(role, { van: 'Van', vin: 'VIN', vtype: 'Type', plate: 'Plate', fuel: 'Fuel', cam: 'Cam', url: 'URL' }) };
+}
+
+function parseDrvBlock(text) {
+  const rows = _splitRows(text, _pickSep(text));
+  if (!rows.length) return { rows: [], skipped: 0, label: '', why: 'nothing to read' };
+  if (rows[0].join(' ').toLowerCase().match(/\b(tid|name|email|phone)\b/) && !rows[0].some(_isTID) && !rows[0].some(_isEmail)) rows.shift();
+  const { role } = _detect(rows, [
+    ['url', _isURL, 0.4], ['email', _isEmail, 0.4], ['tid', _isTID, 0.6], ['phone', _isPhone, 0.4], ['name', _isName, 0.4]
+  ]);
+  const out = []; let skipped = 0;
+  rows.forEach(r => {
+    const g = k => role[k] != null ? String(r[role[k]] || '').trim() : '';
+    const tid = g('tid').toUpperCase();
+    // The TID cell is VALIDATED, not just read: nine rows in the real roster
+    // have a blank ID, which shifts their name into column 0 where everyone
+    // else's ID sits. Reading positionally would file a driver under their own
+    // name as though it were an ID. Same guard A1 v23.96 needed.
+    if (!tid || !_isTID(tid)) { skipped++; return; }
+    const url = g('url');
+    out.push({ tid, name: g('name').replace(/\s+/g, ' ').trim(), phone: _normPhone(g('phone')),
+               email: g('email').toLowerCase(), url, station: _stnFromUrl(url) });
+  });
+  return { rows: out, skipped, label: _label(role, { tid: 'TID', name: 'Name', phone: 'Phone', email: 'Email', url: 'URL' }) };
+}
+
+const LS_VEH = 'dispatch_radar_vehicles';
+const LS_DRV = 'dispatch_radar_drivers';
+const SHARED_PULL_MS = 30000;
+
+let vehStore = {}, drvStore = {};
+let _sharedTimer = null;
+let _sharedLast = { vehicles: 0, drivers: 0 };
+let listTab = 'veh';
+let listSearch = '';
+
+function _lsLoad(k) { try { return JSON.parse(localStorage.getItem(k) || '{}') || {}; } catch (e) { return {}; } }
+function _lsSave(k, o) { try { localStorage.setItem(k, JSON.stringify(o || {})); } catch (e) {} }
+function _live(store) { const o = {}; Object.keys(store || {}).forEach(k => { if (store[k] && !store[k]._deleted) o[k] = store[k]; }); return o; }
+function _stamp(r) { if (r && typeof r === 'object') r._ts = Date.now(); return r; }
+
+function _mergeInto(local, incoming) {
+  let n = 0;
+  Object.keys(incoming || {}).forEach(k => {
+    const inc = incoming[k];
+    if (!inc || typeof inc !== 'object') return;
+    const it = Number(inc._ts) || 0;
+    const ex = local[k];
+    const et = ex ? (Number(ex._ts) || 0) : -1;
+    if (it > et) { local[k] = inc; n++; }
+  });
+  return n;
+}
+
+async function sharedPull(kind) {
+  try {
+    const r = await fetch(cloudUrl + '?action=sharedPull&kind=' + kind + '&_cb=' + Date.now(), {
+      method: 'POST', mode: 'cors', cache: 'no-cache',
+      headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ kind })
+    });
+    if (!r.ok) return 0;
+    const j = await r.json();
+    if (!j || !j.records) return 0;
+    const store = kind === 'vehicles' ? vehStore : drvStore;
+    const n = _mergeInto(store, j.records);
+    if (n) _lsSave(kind === 'vehicles' ? LS_VEH : LS_DRV, store);
+    _sharedLast[kind] = Date.now();
+    return n;
+  } catch (e) { return 0; }
+}
+
+async function sharedPush(kind) {
+  const store = kind === 'vehicles' ? vehStore : drvStore;
+  try {
+    const r = await fetch(cloudUrl + '?action=sharedSave&kind=' + kind + '&_cb=' + Date.now(), {
+      method: 'POST', mode: 'cors', cache: 'no-cache',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ records: store, source: 'A2' })
+    });
+    if (!r.ok) return false;
+    const j = await r.json();
+    return !!(j && j.status === 'success');
+  } catch (e) { return false; }
+}
+
+async function sharedSyncTick(render) {
+  const a = await sharedPull('vehicles');
+  const b = await sharedPull('drivers');
+  if ((a || b) && render && document.getElementById('listsOverlay').classList.contains('open')) renderLists();
+  return a + b;
+}
+
+function startSharedSync() {
+  vehStore = _lsLoad(LS_VEH);
+  drvStore = _lsLoad(LS_DRV);
+  sharedSyncTick(false);
+  if (_sharedTimer) clearInterval(_sharedTimer);
+  _sharedTimer = setInterval(() => sharedSyncTick(true), SHARED_PULL_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') sharedSyncTick(true);
+  });
+}
+
+// ── VIN → van, the same lookup A1 v23.95 does, now available on the phone ──
+let _vinIdx = null, _vinIdxAt = 0;
+function vinToVan(vin) {
+  const v = String(vin || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  if (v.length < 4) return '';
+  if (!_vinIdx || (Date.now() - _vinIdxAt) > 20000) {
+    _vinIdx = { full: {}, l5: {}, dup: {} };
+    const live = _live(vehStore);
+    Object.keys(live).forEach(k => {
+      const r = live[k];
+      const van = String(r.van || k || '').trim().toUpperCase();
+      const vv = String(r.vin || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+      if (!van || !vv) return;
+      if (vv.length >= 11) _vinIdx.full[vv] = van;
+      const l5 = vv.slice(-5);
+      if (l5.length === 5) {
+        if (_vinIdx.l5[l5] && _vinIdx.l5[l5] !== van) _vinIdx.dup[l5] = 1;
+        _vinIdx.l5[l5] = van;
+      }
+    });
+    // A suffix shared by two vans resolves to neither — a confidently wrong van
+    // number is worse than none. Same rule as A1 v23.95.
+    Object.keys(_vinIdx.dup).forEach(l5 => { delete _vinIdx.l5[l5]; });
+    _vinIdxAt = Date.now();
+  }
+  if (_vinIdx.full[v]) return _vinIdx.full[v];
+  const l5 = v.slice(-5);
+  return (l5.length === 5 && _vinIdx.l5[l5]) ? _vinIdx.l5[l5] : '';
+}
+
+function openLists() {
+  document.getElementById('listsOverlay').classList.add('open');
+  renderLists();
+  sharedSyncTick(true);
+}
+function closeLists() { document.getElementById('listsOverlay').classList.remove('open'); }
+function setListTab(t) { listTab = t; listSearch = ''; renderLists(); }
+
+function _lsEsc(x) { return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+
+function renderLists() {
+  const body = document.getElementById('listsBody');
+  const veh = _live(vehStore), drv = _live(drvStore);
+  const on = 'background:#1d4ed8;color:#fff;', off = 'background:var(--bg2);color:var(--fg3);';
+  const q = listSearch.trim().toLowerCase();
+  const age = k => _sharedLast[k] ? Math.round((Date.now() - _sharedLast[k]) / 1000) + 's ago' : 'never';
+
+  let rows = '';
+  if (listTab === 'veh') {
+    let keys = Object.keys(veh).sort();
+    if (q) keys = keys.filter(k => (k + ' ' + (veh[k].vin || '') + ' ' + (veh[k].plate || '') + ' ' + (veh[k].vtype || '')).toLowerCase().includes(q));
+    rows = keys.length ? keys.map(k => {
+      const v = veh[k];
+      return `<div style="background:var(--bg2);border-radius:6px;padding:7px 9px;margin-bottom:4px;border-left:3px solid var(--indigo)">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+          <div style="min-width:0;flex:1">
+            <div style="font-size:12px;font-weight:800;color:#fff">${_lsEsc(v.van || k)}
+              ${v.vtype ? `<span style="font-size:8px;background:#cbd5e1;color:#0f172a;border-radius:3px;padding:1px 5px;margin-left:4px">${_lsEsc(v.vtype)}</span>` : ''}
+              ${v.plate ? `<span style="font-size:9px;color:var(--fg2);margin-left:4px">${_lsEsc(v.plate)}</span>` : ''}
+            </div>
+            <div style="font-size:9px;color:var(--fg3);font-family:ui-monospace,monospace;margin-top:2px">${_lsEsc(v.vin || '—')}</div>
+          </div>
+          <div style="display:flex;gap:4px;flex-shrink:0">
+            ${v.url ? `<a href="${_lsEsc(v.url)}" target="_blank" class="act-btn" style="text-decoration:none">🔗</a>` : ''}
+            <button class="act-btn" onclick="editVeh('${_lsEsc(k)}')">✎</button>
+            <button class="act-btn" onclick="delRecord('vehicles','${_lsEsc(k)}')" style="color:#fca5a5">✕</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('') : '<div class="empty"><p>No vehicles on file. Paste the list below.</p></div>';
+  } else {
+    let keys = Object.keys(drv).sort((a, b) => String(drv[a].name || a).localeCompare(String(drv[b].name || b)));
+    if (q) keys = keys.filter(k => (k + ' ' + (drv[k].name || '') + ' ' + (drv[k].phone || '') + ' ' + (drv[k].email || '') + ' ' + (drv[k].station || '')).toLowerCase().includes(q));
+    rows = keys.length ? keys.map(k => {
+      const v = drv[k];
+      return `<div style="background:var(--bg2);border-radius:6px;padding:7px 9px;margin-bottom:4px;border-left:3px solid var(--violet)">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
+          <div style="min-width:0;flex:1">
+            <div style="font-size:12px;font-weight:700;color:#fff">${_lsEsc(v.name || k)}
+              ${v.station ? `<span style="font-size:8px;background:#93c5fd;color:#0f172a;border-radius:3px;padding:1px 5px;margin-left:4px">${_lsEsc(v.station)}</span>` : ''}
+            </div>
+            <div style="font-size:9px;color:var(--fg3);margin-top:2px">${_lsEsc(v.phone || '—')} · ${_lsEsc(v.email || '—')}</div>
+            <div style="font-size:8px;color:#4b5563;font-family:ui-monospace,monospace">${_lsEsc(k)}</div>
+          </div>
+          <div style="display:flex;gap:4px;flex-shrink:0">
+            ${v.phone ? `<a href="tel:${_lsEsc(v.phone)}" class="act-btn" style="text-decoration:none">📞</a>` : ''}
+            ${v.url ? `<a href="${_lsEsc(v.url)}" target="_blank" class="act-btn" style="text-decoration:none">🔗</a>` : ''}
+            <button class="act-btn" onclick="delRecord('drivers','${_lsEsc(k)}')" style="color:#fca5a5">✕</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('') : '<div class="empty"><p>No drivers on file. Paste the roster below.</p></div>';
+  }
+
+  body.innerHTML = `
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button style="${listTab === 'veh' ? on : off}border:0;border-radius:7px;padding:7px 14px;font-size:12px;font-weight:700;flex:1" onclick="setListTab('veh')">🚐 Vehicles (${Object.keys(veh).length})</button>
+      <button style="${listTab === 'drv' ? on : off}border:0;border-radius:7px;padding:7px 14px;font-size:12px;font-weight:700;flex:1" onclick="setListTab('drv')">🧑‍✈️ Drivers (${Object.keys(drv).length})</button>
+    </div>
+    <div style="font-size:9px;color:var(--fg3);margin-bottom:6px">
+      Shared with the desktop · last sync ${age(listTab === 'veh' ? 'vehicles' : 'drivers')} · edits reach A1 within a minute
+      <button class="act-btn" style="margin-left:6px" onclick="sharedSyncTick(true).then(()=>showToast('Synced'))">↻ Sync now</button>
+    </div>
+    <input class="search-input" style="padding-left:10px;margin-bottom:8px" placeholder="Search…" value="${_lsEsc(listSearch)}"
+      oninput="listSearch=this.value;renderLists();setTimeout(()=>{const i=document.querySelector('#listsBody .search-input');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}},0)">
+    <div style="max-height:48vh;overflow-y:auto;-webkit-overflow-scrolling:touch;margin-bottom:8px">${rows}</div>
+    <div style="font-size:10px;color:var(--fg2);margin-bottom:4px">Paste rows from the spreadsheet — <b>column order does not matter</b>.</div>
+    <textarea class="debrief-textarea" id="listPaste" style="min-height:90px" placeholder="${listTab === 'veh' ? 'EV83\tEV\tXMRU76\t\tC\thttps://…?vin=7FCEHDB71NN002828' : 'A2SZQWVZU84RCO\tAdrian Jermaine Johnson\t862-381-0647\tsdsc.aj876@gmail.com\thttps://…&station=DJE5'}"></textarea>
+    <div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap">
+      <button class="rpt-save-btn" style="padding:8px 18px;font-size:13px" onclick="importList()">Import / Merge</button>
+      <span id="listStatus" style="font-size:10px;color:#93c5fd;flex:1"></span>
+    </div>
+    <p style="font-size:8px;color:var(--fg3);text-align:center;margin-top:10px;font-style:italic">Mobile Amazon Radar — By: Andrismar T.</p>`;
+}
+
+function editVeh(k) {
+  const r = _live(vehStore)[k]; if (!r) return;
+  const v = prompt('Plate for ' + (r.van || k) + ':', r.plate || '');
+  if (v === null) return;
+  vehStore[k] = _stamp(Object.assign({}, r, { plate: v.trim().toUpperCase() }));
+  _lsSave(LS_VEH, vehStore);
+  sharedPush('vehicles').then(ok => showToast(ok ? 'Saved — desktop within a minute' : 'Saved locally, will retry', !ok));
+  renderLists();
+}
+
+function delRecord(kind, k) {
+  const store = kind === 'vehicles' ? vehStore : drvStore;
+  const label = (store[k] && (store[k].van || store[k].name)) || k;
+  if (!confirm('Remove ' + label + '?')) return;
+  // A tombstone, not a delete — see the note at the top of this section.
+  store[k] = kind === 'vehicles' ? { van: k, _deleted: true, _ts: Date.now() }
+                                 : { tid: k, _deleted: true, _ts: Date.now() };
+  _lsSave(kind === 'vehicles' ? LS_VEH : LS_DRV, store);
+  _vinIdx = null;
+  sharedPush(kind).then(ok => showToast(ok ? 'Removed everywhere' : 'Removed locally, will retry', !ok));
+  renderLists();
+}
+
+async function importList() {
+  const ta = document.getElementById('listPaste');
+  const st = document.getElementById('listStatus');
+  if (!ta || !ta.value.trim()) { if (st) st.textContent = 'Nothing pasted.'; return; }
+  const kind = listTab === 'veh' ? 'vehicles' : 'drivers';
+  const res = kind === 'vehicles' ? parseVehBlock(ta.value) : parseDrvBlock(ta.value);
+  if (!res.rows.length) { st.textContent = 'Nothing recognised — ' + (res.why || 'check the columns'); st.style.color = '#fbbf24'; return; }
+  const store = kind === 'vehicles' ? vehStore : drvStore;
+  let added = 0, updated = 0;
+  res.rows.forEach(row => {
+    const key = kind === 'vehicles' ? row.van : row.tid;
+    if (!key) return;
+    const prev = store[key];
+    // Merge per field so a paste missing the email column cannot blank one.
+    const merged = Object.assign({}, (prev && !prev._deleted) ? prev : {}, {});
+    Object.keys(row).forEach(f => { if (row[f]) merged[f] = row[f]; });
+    delete merged._deleted;
+    if (prev && !prev._deleted) updated++; else added++;
+    store[key] = _stamp(merged);
+  });
+  _lsSave(kind === 'vehicles' ? LS_VEH : LS_DRV, store);
+  _vinIdx = null;
+  st.style.color = '#93c5fd';
+  st.textContent = added + ' added, ' + updated + ' updated' + (res.skipped ? ', ' + res.skipped + ' skipped' : '') + '. Columns: ' + res.label;
+  const ok = await sharedPush(kind);
+  st.textContent += ok ? ' · pushed' : ' · offline, will retry';
+  ta.value = '';
+  renderLists();
+}
+
 // ═══════════════════════
 //  SETTINGS
 // ═══════════════════════
@@ -3203,7 +3927,7 @@ function openSettings() {
       <button class="hdr-btn" style="width:100%;padding:10px;color:var(--red);border-color:var(--red)" onclick="if(confirm('Clear all local data and reset?')){localStorage.clear();sessionStorage.clear();location.reload()}">Reset Everything</button>
     </div>
     <div style="text-align:center;color:var(--fg3);font-size:10px;margin-top:20px">
-      <div>Mobile Amazon Radar V4.1 · Daily Report v21.51</div>
+      <div>Mobile Amazon Radar v27 · A1 v24.04 · GAS v3.31</div>
       <div style="font-style:italic">By: Andrismar T.</div>
     </div>
   `;
