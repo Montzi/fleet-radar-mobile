@@ -1,7 +1,50 @@
 <!DOCTYPE html>
 <!--
   Mobile Amazon Radar — A2
-  v27 — THE PHONE AND THE DESKTOP ARE NOW PEERS. REQUIRES GAS v3.31 + A1 v24.04.
+  v28 — THE DEBRIEF, THE POSITION AND THE LINKS. REQUIRES GAS v3.31 + A1 v24.05.
+
+  THE POSITION WAS ALWAYS IN THE PAYLOAD AND NEVER ON THE SCREEN. A1 writes a
+  driver's last fix to lastKnownLat / lastKnownLon. This file read d.lat and
+  d.lon — plausible names A1 has never set on a driver — so GPS Location said
+  "No GPS data available" for every driver, Nearest Extra Phone found no
+  candidate to rank, and the map filtered itself empty, all three from the same
+  two wrong field names. Both spellings are accepted now, and the modal prints
+  how old the fix is, because on a phone there is no other way to tell a live
+  position from an hour-old one.
+
+  "PLEASE ADD MORNING DEBRIEF", TWENTY MINUTES AFTER ADDING ONE ON THIS PHONE.
+  The gate read _debriefLoadedRaw, which was only ever written inside the
+  debrief sheet's own render — so the answer to "is there a debrief" depended on
+  which screen happened to be open. It is pulled at boot now and kept fresh on
+  its own timer, and haveDebrief() will also take the drivers' word for it: if
+  A1 has already stamped extra phones onto the board then a debrief plainly
+  exists, whatever this phone managed to fetch. The ↻ icon refreshes it too,
+  which is what the operator expected it to do, and a ↻ Request from A1 button
+  sits wherever the missing data would have been.
+
+  YESTERDAY'S DEBRIEF IS NOT TODAY'S. The read path returned whatever the cloud
+  held and nothing checked the date, so the sheet opened on the previous shift's
+  prose — and saving over it would have re-stamped yesterday's text as today's.
+  A1's 2:30 AM ET rule is applied here now, at the read.
+
+  ONE STATE, ONE ANSWER. A sweeper who had cleared their stops rendered as
+  "✅ AVAILABLE" with "☕ BREAK (42m)" beside it: dispState let the cleared-stops
+  test win while the badge was built from onBreak() alone and knew nothing about
+  it. Two readings of the same driver, side by side, disagreeing. sweeperFree()
+  is the single place that decision is made and both now ask it.
+
+  THE SAME LINKS THE DESKTOP HAS. The van number opens its fleet page, the DA's
+  name opens their Amazon page, the route opens that itinerary in Cortex. Every
+  URL already lived in the shared lists this phone has held since v27.
+
+  WHATSAPP MARKUP, and Outlook blocks per station, matching A1 v24.05 exactly —
+  the two must agree on what a debrief says, and a test drives both parsers over
+  the same inputs to prove they do.
+
+  THE HEADER NO LONGER HIDES UNDER THE BROWSER BAR. viewport-fit=cover lets the
+  page paint edge to edge, which the notch needs, but env(safe-area-inset-top)
+  is 0 in an ordinary tab where the thing covering the top is Safari's frosted
+  toolbar rather than a notch. 100dvh sizes to what is actually visible.
 
   THE GOAL WAS ONE MINUTE, BOTH DIRECTIONS, AND IT IS MET BY POLLING SHORT AND
   PUSHING IMMEDIATELY rather than by polling once and hoping. A local edit
@@ -79,8 +122,17 @@
   --safe-bot: env(safe-area-inset-bottom, 0px);
 }
 
+/* v28 THE TOP OF THE HEADER WAS DISAPPEARING UNDER THE BROWSER'S OWN BAR.
+   viewport-fit=cover lets the page paint edge to edge, which is what the notch
+   needs — but env(safe-area-inset-top) is 0 in a normal browser tab, where the
+   thing covering the top is not a notch but Safari's frosted toolbar. With
+   height:100% the layout box ran the full screen and the first rows of .hdr sat
+   behind that blur. 100dvh sizes to what is actually visible, and the inset
+   floor keeps a few pixels of clearance on every device regardless. */
 html, body {
-  height: 100%; overflow: hidden;
+  height: 100%;
+  height: 100dvh;
+  overflow: hidden;
   background: var(--bg); color: var(--fg);
   font-family: system-ui, -apple-system, sans-serif;
   font-size: 13px;
@@ -91,8 +143,10 @@ html, body {
 
 #app {
   display: flex; flex-direction: column;
-  height: 100%; overflow: hidden;
-  padding-top: var(--safe-top);
+  height: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  padding-top: max(var(--safe-top), 6px);
   padding-bottom: var(--safe-bot);
 }
 
@@ -151,9 +205,11 @@ html, body {
 /* ── Header ── */
 .hdr {
   background: var(--bg);
-  padding: 6px 12px 4px;
+  /* v28: an opaque background of its own plus a little headroom, so even if a
+     browser reports no safe-area inset the title never touches the chrome. */
+  padding: 8px 12px 4px;
   border-bottom: 1px solid var(--bg3);
-  flex-shrink: 0; z-index: 10;
+  flex-shrink: 0; position: relative; z-index: 10;
 }
 
 .hdr-top {
@@ -772,7 +828,7 @@ html, body {
         <div class="hdr-brand">
           <div class="title"><span class="dot"></span> Mobile Amazon Radar <span id="stationBadge" class="hdr-station" onclick="openStationPicker()">DJE5</span></div>
           <div class="station-line">
-            <span class="sig">By: Andrismar T.</span>
+            <span class="sig">v28 · By: Andrismar T.</span>
           </div>
         </div>
         <div class="hdr-controls">
@@ -1037,6 +1093,7 @@ function boot() {
   fetchData();
   fetchDriverInfo();
   startSharedSync();          // v27: vehicle + driver lists, two-way with A1
+  startDebriefCache();        // v28: the debrief exists whether or not its sheet is open
   refreshTimer = setInterval(fetchData, REFRESH_MS);
   // Refresh driver info every 5 minutes
   setInterval(fetchDriverInfo, 300000);
@@ -1254,6 +1311,11 @@ function forceRefresh() {
   btn.style.transition = 'transform .5s';
   setTimeout(() => { btn.style.transform = ''; btn.style.transition = ''; }, 600);
   fetchData();
+  // v28: the ↻ icon means "get me everything current". It used to mean only the
+  // fleet snapshot, which is why pressing it did nothing for a debrief this
+  // phone had not fetched yet — the one case the operator most wanted it for.
+  refreshDebriefCache('manual-refresh');
+  sharedSyncTick(false);
 }
 
 // V3.2: Get vehicle ID for a driver — reads from vehicleMapCache (synced from desktop)
@@ -1494,6 +1556,31 @@ function gpsDot(d) {
   return `<span class="gps-dot" style="background:${c};${sh ? 'box-shadow:' + sh : ''}"></span>`;
 }
 
+// ── v28 THE DRIVER'S POSITION ───────────────────────────────────────────────
+// A1 writes a driver's last fix to lastKnownLat / lastKnownLon on the driver
+// record, which is what the cloud push carries. The phone was reading d.lat and
+// d.lon — plausible names that A1 has never set on a driver — so GPS Location
+// read "No GPS data available" for every driver on every screen while the
+// coordinates sat in the payload untouched. Both spellings are accepted here so
+// a future rename on either side cannot reopen this.
+function drvLat(d) {
+  if (!d) return NaN;
+  const v = (d.lastKnownLat != null) ? d.lastKnownLat : d.lat;
+  const n = Number(v);
+  return Number.isFinite(n) && n !== 0 ? n : NaN;
+}
+function drvLon(d) {
+  if (!d) return NaN;
+  const v = (d.lastKnownLon != null) ? d.lastKnownLon : d.lon;
+  const n = Number(v);
+  return Number.isFinite(n) && n !== 0 ? n : NaN;
+}
+function drvFixAgeMin(d) {
+  const ts = d && (d.lastGpsTs || d.gpsTs);
+  if (!ts) return null;
+  return Math.max(0, Math.floor((Date.now() - ts) / 60000));
+}
+
 function gpsStatusText(d) {
   if (d.gpsMoving && !d.gpsAtStation) return '🟢 Moving';
   if (d.gpsDeparted) return '🔵 Departed';
@@ -1502,9 +1589,30 @@ function gpsStatusText(d) {
   return '⚪ Unknown';
 }
 
+// ── v28 ONE STATE, ONE ANSWER ───────────────────────────────────────────────
+// A sweeper who had cleared their stops and was on a break rendered as
+// "✅ AVAILABLE" with a "☕ BREAK (42m)" badge beside it, because dispState let
+// the cleared-stops test win while the badge was built from onBreak(d) alone
+// and knew nothing about it. Two independent readings of the same driver, side
+// by side, disagreeing. The desktop is right: a sweeper with nothing left IS
+// available, and the break is context, not a contradiction — so the break badge
+// is suppressed exactly where the state has already absorbed it. This predicate
+// is the single place that decision is made, and both the state and the badge
+// now ask it.
+function sweeperFree(d) {
+  return !!(d && d.isSweeper && (d.stopsTotal || 0) > 0 && (d.stopsCompleted || 0) > 0 && rem(d) === 0);
+}
+// True when the state string already says the driver is on a break, so the
+// separate badge would only repeat it.
+function breakShownInState(d) {
+  if (!onBreak(d)) return false;
+  if (sweeperFree(d)) return true;               // state reads AVAILABLE
+  return true;                                    // every other on-break state says ON BREAK
+}
+
 function dispState(d) {
   if (d.isSweeper) {
-    const ns = (d.stopsTotal || 0) > 0 && (d.stopsCompleted || 0) > 0 && rem(d) === 0;
+    const ns = sweeperFree(d);
     if (onBreak(d)) return ns ? '✅ AVAILABLE' : '☕ ON BREAK';
     if (ns && d.gpsAtStation) return '✅ FINISHED';
     if (ns) return '✅ AVAILABLE';
@@ -1806,10 +1914,25 @@ function buildCard(d) {
   const stateBg = d.isSweeper || d.isFlexRoute || d.isHelper ? 'rgba(0,0,0,.35)' : sc + '40';
   const stateFg = d.isSweeper || d.isFlexRoute || d.isHelper ? '#e5e7eb' : sc;
 
+  // v28: the break badge no longer argues with the state badge. Three cases,
+  // and only one of them prints anything:
+  //   · a free sweeper reads AVAILABLE — the desktop's answer, and the break is
+  //     not a state, so no badge (the modal's break history still has it);
+  //   · a state that already says ON BREAK gets the minutes folded in rather
+  //     than a second badge repeating the word;
+  //   · everyone else, where the state badge is suppressed, keeps the badge as
+  //     the only place the break is shown.
   let breakBadge = '';
+  let stateText = state;
   if (onBreak(d)) {
     const mins = d.currentBreakStart ? Math.floor((Date.now() - d.currentBreakStart) / 60000) : 0;
-    breakBadge = `<span class="badge" style="background:#3b82f640;color:#93c5fd">☕ BREAK${mins ? ' (' + mins + 'm)' : ''}</span>`;
+    if (sweeperFree(d)) {
+      breakBadge = '';
+    } else if (showStateBadge && /BREAK/i.test(state)) {
+      stateText = state + (mins ? ' (' + mins + 'm)' : '');
+    } else {
+      breakBadge = `<span class="badge" style="background:#3b82f640;color:#93c5fd">☕ BREAK${mins ? ' (' + mins + 'm)' : ''}</span>`;
+    }
   }
 
   let idleStr = '';
@@ -1856,7 +1979,7 @@ function buildCard(d) {
       </div>
     </div>
     <div class="badge-row">
-      ${showStateBadge ? `<span class="badge" style="background:${stateBg};color:${stateFg}">${state}</span>` : ''}
+      ${showStateBadge ? `<span class="badge" style="background:${stateBg};color:${stateFg}">${stateText}</span>` : ''}
       ${breakBadge}
       ${badges.map(b => `<span class="badge" style="background:${b[0]};color:${b[1]}">${b[2]}</span>`).join('')}
     </div>
@@ -1870,8 +1993,16 @@ function buildCard(d) {
 // ═══════════════════════
 
 function openModal(tid) {
-  const d = memory.drivers && memory.drivers[tid];
-  if (!d) return;
+  const _rec = memory.drivers && memory.drivers[tid];
+  if (!_rec) return;
+  // v28: THE VAN NUMBER WAS NEVER SHOWING IN THIS MODAL, and not for want of
+  // data. memory.drivers is keyed BY tid, so the record it holds carries no id
+  // of its own — while getVehicleId opens with `if (!d || !d.id) return ''`,
+  // the guard that makes it safe on the card list, where getRaw() spreads the
+  // key back in. Passed the bare record, it returned empty every single time,
+  // so the van line rendered for nobody however good the vehicle list was.
+  // The modal now works from the same shape the cards do.
+  const d = Object.assign({ id: tid }, _rec);
 
   const name = d.name || '—';
   const displayName = abbr(name);
@@ -1899,21 +2030,77 @@ function openModal(tid) {
   const flexPass = info.flexPass || 'N/A';
   const homeStation = d.homeStation || '';
 
-  // GPS section
+  // ── v28 THE SAME LINKS THE DESKTOP HAS ──────────────────────────────────
+  // On A1 the DA's name opens their Amazon performance page and the van number
+  // opens its fleet page. Both URLs already live in the shared lists this phone
+  // has held since v27, so the phone was showing plain text for data it had.
+  // The operator's mobile browser is signed in, so these open straight through.
+  const _esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const _vanUC = (getVehicleId(d) || '').toUpperCase();
+  const _vehRec = _vanUC ? (_live(vehStore)[_vanUC] || null) : null;
+  const _vanUrl = _vehRec && _vehRec.url ? _vehRec.url : '';
+  const _vanHtml = _vanUC
+    ? (_vanUrl
+        ? `<a href="${_esc(_vanUrl)}" target="_blank" rel="noopener" style="color:#93c5fd;font-weight:700;text-decoration:underline;text-underline-offset:2px">🚐 ${_esc(_vanUC)}</a>`
+        : `<span style="color:#d1d5db;font-weight:600">🚐 ${_esc(_vanUC)}</span>`)
+    : '';
+  const _vanExtras = (_vehRec && (_vehRec.fuel || _vehRec.cam === 'C'))
+    ? ` <span style="color:var(--fg3);font-size:9px">${_vehRec.fuel ? (_vehRec.fuel === 'G' ? '(Gas)' : '(Diesel)') : ''}${_vehRec.cam === 'C' ? ' 📷' : ''}</span>`
+    : '';
+
+  // The driver record is keyed by TID in the shared list; fall back to a name
+  // match so a driver added by hand without a TID is still linked.
+  const _drvLive = _live(drvStore);
+  let _drvRec = (tid && _drvLive[tid]) || null;
+  if (!_drvRec && d.name) {
+    const _n = String(d.name).toLowerCase().replace(/\s+/g, ' ').trim();
+    for (const k in _drvLive) {
+      if (String(_drvLive[k].name || '').toLowerCase().replace(/\s+/g, ' ').trim() === _n) { _drvRec = _drvLive[k]; break; }
+    }
+  }
+  const _daUrl = (_drvRec && _drvRec.url) || d.amazonUrl || '';
+  const _nameHtml = _daUrl
+    ? `<a href="${_esc(_daUrl)}" target="_blank" rel="noopener" style="color:#93c5fd;text-decoration:underline;text-underline-offset:2px;overflow:hidden;text-overflow:ellipsis">${_esc(displayName)}</a>`
+    : `<span style="overflow:hidden;text-overflow:ellipsis">${_esc(displayName)}</span>`;
+
+  // The route opens that day's board in Cortex. Built from the itinerary the
+  // driver is actually on when A1 pushed one, so it lands on this driver rather
+  // than the station-wide list.
+  const _routeTxt = d.route || '?';
+  const _saId = d.serviceAreaId || (memory && memory.serviceAreaId) || '';
+  const _day = (memory && memory.selectedDay) || new Date().toISOString().split('T')[0];
+  const _routeUrl = d.itineraryId
+    ? 'https://logistics.amazon.com/operations/execution/itineraries/' + encodeURIComponent(d.itineraryId)
+      + '/documentType/Itinerary?provider=ALL_DRIVERS&routesFilter=&selectedDay=' + encodeURIComponent(_day)
+      + '&serviceAreaId=' + encodeURIComponent(_saId)
+    : '';
+  const _routeHtml = _routeUrl
+    ? `<a href="${_esc(_routeUrl)}" target="_blank" rel="noopener" style="color:${c};text-decoration:underline;text-underline-offset:2px;font-weight:800">${_esc(_routeTxt)}</a>`
+    : `<span style="color:${c}">${_esc(_routeTxt)}</span>`;
+
+  // GPS section — v28 reads A1's real field names, see drvLat().
   let gpsHtml = '';
   const gpsStatus = gpsStatusText(d);
-  if (d.lat && d.lon && Number.isFinite(d.lat) && Number.isFinite(d.lon)) {
+  const _gLat = drvLat(d), _gLon = drvLon(d);
+  if (Number.isFinite(_gLat) && Number.isFinite(_gLon)) {
+    // A position is only as good as its age, and on a phone the operator has no
+    // other way to tell a live fix from one an hour old.
+    const _age = drvFixAgeMin(d);
+    const _ageTxt = _age == null ? '' : (_age < 1 ? ' · just now' : ' · ' + _age + 'm ago');
+    const _ageCol = _age != null && _age > 20 ? 'var(--amber)' : 'var(--fg3)';
     gpsHtml = `<div class="modal-section">
       <div class="modal-section-title" style="color:var(--blue)">📍 GPS Location</div>
-      <div style="font-size:10px;color:var(--fg2);margin-bottom:4px">${gpsStatus} · ${d.lat.toFixed(4)}, ${d.lon.toFixed(4)}</div>
-      <a href="https://maps.apple.com/?ll=${d.lat},${d.lon}&q=${encodeURIComponent(name)}" target="_blank"
+      <div style="font-size:10px;color:var(--fg2);margin-bottom:4px">${gpsStatus} · ${_gLat.toFixed(4)}, ${_gLon.toFixed(4)}<span style="color:${_ageCol}">${_ageTxt}</span></div>
+      <a href="https://maps.apple.com/?ll=${_gLat},${_gLon}&q=${encodeURIComponent(name)}" target="_blank"
         style="display:block;background:var(--bg);padding:7px;border-radius:6px;text-align:center;color:var(--blue);font-weight:600;font-size:11px;text-decoration:none;border:1px solid var(--bg3)">
         📍 Open in Maps</a>
     </div>`;
   } else {
     gpsHtml = `<div class="modal-section">
       <div class="modal-section-title" style="color:var(--blue)">📍 GPS Location</div>
-      <div style="font-size:10px;color:var(--fg3)">No GPS data available</div>
+      <div style="font-size:10px;color:var(--fg3)">No position reported for this driver yet.</div>
+      <button class="hdr-btn a1-req-btn" style="margin-top:6px;padding:4px 10px;font-size:10px" onclick="requestFromA1('${tid}')">↻ Request from A1</button>
     </div>`;
   }
 
@@ -2074,11 +2261,12 @@ function openModal(tid) {
       <div style="flex:1;min-width:0">
         <div style="font-size:14px;font-weight:800;display:flex;align-items:center;gap:4px;flex-wrap:wrap">
           ${gpsDot(d)}
-          <span style="color:${c}">${d.route || '?'}</span>
-          <span style="overflow:hidden;text-overflow:ellipsis">${displayName}</span>
+          ${_routeHtml}
+          ${_nameHtml}
           ${d.inspectionDone ? '<span style="background:#22c55e;color:#fff;padding:1px 5px;border-radius:3px;font-size:8px;font-weight:700">INSP DONE</span>' : ''}
+          ${d._outlookStation ? `<span style="background:#0c4a6e;color:#7dd3fc;padding:1px 5px;border-radius:3px;font-size:8px;font-weight:700">🔀 ${_esc(d._outlookStation)}</span>` : ''}
         </div>
-        ${getVehicleId(d) ? `<div style="font-size:10px;color:#d1d5db;font-weight:600;margin-top:2px">🚐 ${getVehicleId(d)}</div>` : ''}
+        ${_vanHtml ? `<div style="font-size:10px;margin-top:2px">${_vanHtml}${_vanExtras}</div>` : ''}
       </div>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
@@ -2177,13 +2365,16 @@ function openModal(tid) {
       // phone may still be in the van. Distance is straight-line.
       try {
         const me = memory.drivers && memory.drivers[tid];
-        const lat = me && me.lat, lon = me && me.lon;
+        // v28: A1 stores a driver's position as lastKnownLat / lastKnownLon.
+        // This read `me.lat` — a field A1 never writes on a driver — so every
+        // driver looked positionless and the list never rendered for anyone.
+        const lat = drvLat(me), lon = drvLon(me);
         const hdr = '<div class="modal-section"><div class="modal-section-title" style="color:#f97316">📱 Nearest Extra Phone</div>';
-        const hasDebrief = !!(_debriefLoadedRaw || (memory && memory._debriefRaw));
-        if (!hasDebrief && !Object.values(memory.drivers || {}).some(x => x && x.hasExtraPhone))
-          return hdr + '<div style="font-size:10px;color:#fbbf24">Please add morning debrief</div><div style="font-size:9px;color:var(--fg3);margin-top:3px">Extra phones are read from the morning debrief.</div></div>';
+        const reqBtn = '<button class="hdr-btn a1-req-btn" style="margin-top:6px;padding:4px 10px;font-size:10px" onclick="requestFromA1(\'' + tid + '\')">↻ Request from A1</button>';
+        if (!haveDebrief())
+          return hdr + '<div style="font-size:10px;color:#fbbf24">Please add morning debrief</div><div style="font-size:9px;color:var(--fg3);margin-top:3px">Extra phones are read from the morning debrief.</div>' + reqBtn + '</div>';
         if (!Number.isFinite(lat) || !Number.isFinite(lon))
-          return hdr + '<div style="font-size:10px;color:var(--fg3)">No GPS for this driver yet.</div></div>';
+          return hdr + '<div style="font-size:10px;color:var(--fg3)">Debrief is loaded · waiting on this driver\'s position.</div>' + reqBtn + '</div>';
         const R = 6371000, tr = x => x * Math.PI / 180;
         const dist = (a, b, c, e) => {
           const dl = tr(c - a), dn = tr(e - b);
@@ -2194,13 +2385,14 @@ function openModal(tid) {
         Object.entries(memory.drivers || {}).forEach(([k, o]) => {
           if (!o || k === tid || o.isRemoved || o.isBaseline) return;
           if (!o.hasExtraPhone || !((o.extraPhoneCount || 0) > 0)) return;
-          if (!Number.isFinite(o.lat) || !Number.isFinite(o.lon)) return;
+          const oLat = drvLat(o), oLon = drvLon(o);
+          if (!Number.isFinite(oLat) || !Number.isFinite(oLon)) return;
           cands.push({ k, name: abbr(o.name || k), van: getVehicleId({ id: k, ...o }),
-                       n: o.extraPhoneCount || 1, lat: o.lat, lon: o.lon,
-                       state: o.state || '', m: dist(lat, lon, o.lat, o.lon) });
+                       n: o.extraPhoneCount || 1, lat: oLat, lon: oLon,
+                       state: o.state || '', m: dist(lat, lon, oLat, oLon) });
         });
         if (!cands.length)
-          return hdr + '<div style="font-size:10px;color:var(--fg3)">No driver at ' + currentStation + ' with an extra phone has reported a position.</div></div>';
+          return hdr + '<div style="font-size:10px;color:var(--fg3)">No driver at ' + currentStation + ' with an extra phone has reported a position.</div>' + reqBtn + '</div>';
         const done = c => /FINISH|INACTIVE/i.test(c.state);
         const byD = (a, b) => a.m - b.m;
         const top = cands.filter(c => !done(c)).sort(byD).concat(cands.filter(done).sort(byD)).slice(0, 3);
@@ -2276,7 +2468,11 @@ function closeModal() {
 
 function openMap() {
   document.getElementById('mapOverlay').classList.add('open');
-  const drivers = getRaw().filter(d => d.lat && d.lon && Number.isFinite(d.lat) && Number.isFinite(d.lon));
+  // v28: same field-name fix as the modal. The map was empty for the same
+  // reason GPS Location was blank — it filtered on d.lat, which A1 does not set.
+  const drivers = getRaw()
+    .map(d => Object.assign({}, d, { _mLat: drvLat(d), _mLon: drvLon(d) }))
+    .filter(d => Number.isFinite(d._mLat) && Number.isFinite(d._mLon));
   document.getElementById('mapCount').textContent = drivers.length + ' on map';
 
   if (!leafletMap) {
@@ -2309,13 +2505,13 @@ function openMap() {
   drivers.forEach(d => {
     const color = d.inspectionDone ? '#22c55e' : d.state === 'INACTIVE' ? '#f59e0b' : d.state === 'ON BREAK' ? '#3b82f6' :
       d.state === 'FINISHED' ? '#10b981' : d.isSweeper ? '#fb923c' : d.isHelper ? '#60a5fa' : d.isFlexRoute ? '#a855f7' : '#10b981';
-    const m = L.circleMarker([d.lat, d.lon], { radius: 7, color, fillColor: color, fillOpacity: .85, weight: 1.5 })
+    const m = L.circleMarker([d._mLat, d._mLon], { radius: 7, color, fillColor: color, fillOpacity: .85, weight: 1.5 })
       .bindPopup(`<div style="font-size:11px"><b>${d.route || '?'}</b> ${abbr(d.name)}<br>${getVehicleId(d)}<br>${dispState(d)}<br>Stops: ${d.stopsCompleted || 0}/${d.stopsTotal || 0}<br>Pace: ${d.pace || '—'}</div>`);
     leafletMap.addLayer(m);
     mapMarkers.push(m);
   });
 
-  const bounds = L.latLngBounds(drivers.map(d => [d.lat, d.lon]));
+  const bounds = L.latLngBounds(drivers.map(d => [d._mLat, d._mLon]));
   if (sc2) bounds.extend(sc2);
   leafletMap.fitBounds(bounds, { padding: [30, 30] });
 }
@@ -2370,7 +2566,39 @@ let _debriefLoadedAt = 0;        // savedAt of that document
 let _debriefPollTimer = null;
 let _debriefDirty = false;       // the operator has typed since it loaded
 
-// The one read path. Returns the parsed doc or null.
+// ── v28 BOOT CACHE ──────────────────────────────────────────────────────────
+// _debriefLoadedRaw used to be written ONLY inside renderDebriefBody, so it was
+// empty until the operator opened the debrief sheet. Nearest Extra Phone gates
+// on "is there a debrief", read that empty string, and told the operator to add
+// a debrief they had entered on this very phone twenty minutes earlier. The
+// answer to "does a debrief exist" cannot depend on which screen happens to be
+// open, so it is pulled at boot and kept fresh on its own timer.
+let _debriefDoc = null;          // the current-shift document, or null
+let _debriefDocAt = 0;
+let _debriefCacheTimer = null;
+const DEBRIEF_CACHE_MS = 60000;
+
+// A1's rule, reproduced: a document belongs to the shift it was saved in, and a
+// shift rolls at 2:30 AM ET. shiftDate is authoritative; the legacy `date` field
+// is a toDateString() and is only read when shiftDate is absent.
+function debriefShiftDateOf(doc) {
+  if (!doc) return null;
+  if (doc.shiftDate) return doc.shiftDate;
+  if (!doc.date) return null;
+  const d = new Date(doc.date);
+  if (isNaN(d.getTime())) return null;
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function debriefIsCurrentShift(doc) {
+  const sd = debriefShiftDateOf(doc);
+  return !!sd && sd === shiftDateET();
+}
+
+// The one read path. Returns the current-shift document, or null.
+// v28: a document from a PREVIOUS shift is null, not stale text. The phone was
+// showing yesterday's debrief in the textarea because this returned whatever the
+// cloud held and nothing downstream checked the date. Saving over it would then
+// have re-stamped yesterday's prose as today's.
 async function pullDebriefFromCloud() {
   try {
     const resp = await fetch(cloudUrl + '?action=debriefPull&station=global&_cb=' + Date.now(), {
@@ -2380,11 +2608,77 @@ async function pullDebriefFromCloud() {
     });
     if (!resp.ok) return null;
     const data = await resp.json();
-    return (data && data.raw) ? data : null;
+    if (!data || !data.raw) return null;
+    if (!debriefIsCurrentShift(data)) {
+      console.log('[Radar] debrief is from shift ' + debriefShiftDateOf(data) + ', current is ' + shiftDateET() + ' — ignored');
+      return null;
+    }
+    return data;
   } catch (e) {
     console.warn('[Radar] debrief pull failed:', e && e.message);
     return null;
   }
+}
+
+// Refresh the cache. Returns the document or null. Safe to call from anywhere —
+// boot, the timer, tab focus, or the operator's own button.
+async function refreshDebriefCache(tag) {
+  const doc = await pullDebriefFromCloud();
+  if (doc) {
+    _debriefDoc = doc;
+    _debriefDocAt = doc.savedAt || doc.lastUpdated || 0;
+    if (!_debriefDirty) _debriefLoadedRaw = doc.raw;
+  } else if (_debriefDoc && !debriefIsCurrentShift(_debriefDoc)) {
+    // The shift rolled while this tab stayed open. Drop it rather than letting
+    // yesterday's names answer today's question.
+    _debriefDoc = null; _debriefDocAt = 0;
+    if (!_debriefDirty) _debriefLoadedRaw = '';
+  }
+  return doc;
+}
+
+// "Is a morning debrief in force?" — the single question every screen asks.
+// Answered from the cache, from the sheet if it happens to be open, or from the
+// drivers themselves: if A1 has already stamped extra phones onto the board then
+// a debrief plainly exists, whatever this phone managed to fetch.
+function haveDebrief() {
+  if (_debriefDoc && debriefIsCurrentShift(_debriefDoc)) return true;
+  if (_debriefLoadedRaw) return true;
+  if (memory && memory._debriefRaw) return true;
+  const ds = memory && memory.drivers;
+  if (ds && Object.values(ds).some(x => x && (x.hasExtraPhone || x._debriefPhoneCount > 0 || x.hasStaplesDebrief))) return true;
+  return false;
+}
+
+function startDebriefCache() {
+  refreshDebriefCache('boot');
+  if (_debriefCacheTimer) clearInterval(_debriefCacheTimer);
+  _debriefCacheTimer = setInterval(() => refreshDebriefCache('poll'), DEBRIEF_CACHE_MS);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refreshDebriefCache('focus');
+  });
+}
+
+// ── v28 MANUAL PULL ─────────────────────────────────────────────────────────
+// The operator asked for a way to demand this data rather than wait for it. One
+// button, one round trip: the debrief document and the fleet snapshot together,
+// then the open modal is redrawn so the answer appears where they were looking.
+async function requestFromA1(tid) {
+  const btns = Array.prototype.slice.call(document.querySelectorAll('.a1-req-btn'));
+  btns.forEach(b => { b.disabled = true; b.textContent = '⏳ Requesting…'; });
+  let doc = null;
+  try {
+    doc = await refreshDebriefCache('manual');
+    await fetchData();
+    await sharedSyncTick(false);
+  } catch (e) { /* fall through to the report below */ }
+  btns.forEach(b => { b.disabled = false; b.textContent = '↻ Request from A1'; });
+  if (tid && document.getElementById('driverModal').classList.contains('open')) {
+    openModal(tid);
+  }
+  showToast(doc ? 'Debrief and fleet data refreshed from A1'
+                : (haveDebrief() ? 'Fleet data refreshed · debrief already applied'
+                                 : 'No morning debrief saved for this shift yet'));
 }
 
 // Poll while the sheet is open so an edit made on the desktop appears here
@@ -2838,33 +3132,169 @@ async function saveDebriefToCloud() {
   }
 }
 
-function parseAndShowDebrief(text) {
-  const el = document.getElementById('debriefParsed');
-  if (!el) return;
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  let section = '';
-  let attendance = [], sweepers = [], extraPhones = [], alerts = [];
+// ── v28 WHATSAPP RICH TEXT ──────────────────────────────────────────────────
+// The debrief is written in WhatsApp and pasted straight in, markup and all:
+// *bold*, _italic_, ~strike~, `mono`. Every line that matters is a heading, and
+// headings are exactly what people bold, so the markup lands precisely on the
+// section detectors. Stripped once, up front, and only in PAIRS, so an asterisk
+// used as a bullet and a hyphenated surname both survive. Mirrors A1 v24.05
+// byte for byte in behaviour — the two must agree on what a debrief says.
+function stripWaMarkup(s) {
+  let t = String(s == null ? '' : s);
+  t = t.replace(/```/g, '');
+  for (let i = 0; i < 3; i++) {
+    t = t.replace(/(^|[\s(\[{"'])\*([^*\n]+)\*(?=$|[\s.,:;!?)\]}"'])/g, '$1$2');
+    t = t.replace(/(^|[\s(\[{"'])_([^_\n]+)_(?=$|[\s.,:;!?)\]}"'])/g, '$1$2');
+    t = t.replace(/(^|[\s(\[{"'])~([^~\n]+)~(?=$|[\s.,:;!?)\]}"'])/g, '$1$2');
+    t = t.replace(/(^|[\s(\[{"'])`([^`\n]+)`(?=$|[\s.,:;!?)\]}"'])/g, '$1$2');
+  }
+  return t.trim();
+}
+
+// Parse a debrief into the pieces the phone displays. Returns the structure so
+// the boot cache can ask "does a debrief exist and who has a phone" without a
+// DOM node to render into — parseAndShowDebrief is the rendering wrapper.
+function parseDebriefLite(text) {
+  const out = { attendance: [], sweepers: [], extraPhones: [], crossStationPhones: [], alerts: [],
+                stationBlocks: [], crossStationDas: [], date: '',
+                routes: null, reduction: null, packageCount: null, spr: null,
+                station: '' };
+  const lines = String(text || '').split('\n').map(stripWaMarkup).filter(Boolean);
+  let section = '', cur = null;
+  const ownStn = String(currentStation || '').toUpperCase();
+  // A bare station code inside Extra Phones re-points the names that follow.
+  // A1 has split own-station from other-station phones since v23.99 and the
+  // phone must agree, or it lists a DJZ6 phone as one of ours.
+  let phoneStation = ownStn;
+
+  const open = (st) => {
+    const s = String(st || '').toUpperCase();
+    let b = out.stationBlocks.find(x => x.station === s);
+    if (!b) { b = { station: s, routes: null, reduction: null, packageCount: null, spr: null, das: [] }; out.stationBlocks.push(b); }
+    cur = b; section = 'outlook'; return b;
+  };
+
+  // Date off the bolded title line.
+  for (let i = 0; i < Math.min(lines.length, 4); i++) {
+    if (!/debrief/i.test(lines[i])) continue;
+    const dm = lines[i].match(/(\d{1,2})\s*[\/\-.]\s*(\d{1,2})(?:\s*[\/\-.]\s*(\d{2,4}))?/);
+    if (dm) {
+      const yr = dm[3] ? (dm[3].length === 2 ? '20' + dm[3] : dm[3]) : String(new Date().getFullYear());
+      out.date = yr + '-' + String(dm[1]).padStart(2, '0') + '-' + String(dm[2]).padStart(2, '0');
+    }
+    break;
+  }
+  // Flat single-line header, the pre-WhatsApp shape.
+  const h = lines[0] || '';
+  let m;
+  if ((m = h.match(/Routes:\s*(\d+)/i)))            out.routes = m[1];
+  if ((m = h.match(/Package Count:\s*([\d,]+)/i)))  out.packageCount = m[1];
+  if ((m = h.match(/SPR:\s*([\d,]+)/i)))            out.spr = m[1];
+  if ((m = h.match(/\b(D[A-Z]{2}\d)\b/i)))          out.station = m[1].toUpperCase();
 
   lines.forEach(line => {
+    const blk = line.match(/^(?:outlook|station|site|wave)\s*[-:]?\s*(D[A-Z]{2}\d)\b.*$/i);
+    if (blk) { open(blk[1]); return; }
+
+    const mR = line.match(/^routes\s*[:\-]\s*([\d,]+)\s*$/i);
+    const mD = line.match(/^reductions?\s*[:\-]\s*([\d,]+)\s*$/i);
+    const mP = line.match(/^(?:package\s*count|packages?)\s*[:\-]\s*([\d,]+)\s*$/i);
+    const mS = line.match(/^spr\s*[:\-]\s*([\d,.]+)\s*$/i);
+    if (mR || mD || mP || mS) {
+      const val = (mR || mD || mP || mS)[1];
+      const key = mR ? 'routes' : mD ? 'reduction' : mP ? 'packageCount' : 'spr';
+      if (cur) cur[key] = val;
+      if ((!cur || cur.station === ownStn) && out[key] == null) out[key] = val;
+      return;
+    }
+
+    if (/das?\s+to\s+look\s+out/i.test(line)) { section = 'watch'; return; }
+    if (/^da['’]?s?\s*[:\-]\s*$/i.test(line) || /^da['’]?s?\s*[:\-]\s+/i.test(line)) {
+      section = 'blockdas';
+      const inline = line.replace(/^da['’]?s?\s*[:\-]\s*/i, '').trim();
+      if (inline && cur) inline.split(/\s*,\s*/).forEach(n => { if (n.trim()) cur.das.push(n.trim()); });
+      return;
+    }
+
     if (/attendance:/i.test(line)) { section = 'att'; return; }
     if (/sweeper:/i.test(line)) { section = 'sweep'; return; }
-    if (/extra\s*phones?[:\s]/i.test(line) || /^extra\s*phones?$/i.test(line)) { section = 'ep'; return; }
+    if (/extra\s*phones?[:\s]/i.test(line) || /^extra\s*phones?$/i.test(line)) { section = 'ep'; phoneStation = ownStn; return; }
     if (/alerts?:/i.test(line)) { section = 'alert'; return; }
     if (/additional:/i.test(line) || /pick\s*ups?:/i.test(line) || /stand.?up/i.test(line) || /weather:/i.test(line)) { section = 'other'; return; }
 
+    // A bare station code. Inside Extra Phones it keeps its old meaning; any-
+    // where else it is an Outlook block written without the word "Outlook".
+    const st = line.match(/^[•\-\*]?\s*(D[A-Z]{2}\d)\s*[:\-]?\s*$/i);
+    if (st) { phoneStation = st[1].toUpperCase(); if (section !== 'ep') open(st[1]); return; }
+
     const content = line.replace(/^[•\-\*]\s*/, '').trim();
     if (!content) return;
-    if (section === 'att') attendance.push(content);
-    if (section === 'sweep') sweepers.push(content);
-    if (section === 'ep') extraPhones.push(content);
-    if (section === 'alert') alerts.push(content);
+    if (section === 'blockdas') { if (cur) cur.das.push(content); return; }
+    if (section === 'att') out.attendance.push(content);
+    if (section === 'sweep') out.sweepers.push(content);
+    if (section === 'ep') {
+      if (phoneStation === ownStn) out.extraPhones.push(content);
+      else out.crossStationPhones.push({ name: content, station: phoneStation });
+    }
+    if (section === 'alert') out.alerts.push(content);
   });
 
+  out.stationBlocks.forEach(b => {
+    if (b.station === ownStn) {
+      if (out.routes == null) out.routes = b.routes;
+      if (out.reduction == null) out.reduction = b.reduction;
+      if (out.packageCount == null) out.packageCount = b.packageCount;
+      if (out.spr == null) out.spr = b.spr;
+      if (!out.station) out.station = b.station;
+      return;
+    }
+    (b.das || []).forEach(n => out.crossStationDas.push({ name: n, station: b.station }));
+  });
+  if (out.routes == null && out.stationBlocks.length) {
+    const b0 = out.stationBlocks[0];
+    out.routes = b0.routes; out.reduction = b0.reduction;
+    out.packageCount = b0.packageCount; out.spr = b0.spr;
+  }
+  return out;
+}
+
+function parseAndShowDebrief(text) {
+  const el = document.getElementById('debriefParsed');
+  if (!el) return;
+  const p = parseDebriefLite(text);
+  const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
   let html = '';
-  if (attendance.length) html += `<div style="font-size:10px;font-weight:700;color:var(--green);margin-bottom:2px">✅ Attendance (${attendance.length})</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${attendance.join(', ')}</div>`;
-  if (sweepers.length) html += `<div style="font-size:10px;font-weight:700;color:var(--orange);margin-bottom:2px">🧹 Sweepers</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${sweepers.join('<br>')}</div>`;
-  if (extraPhones.length) html += `<div style="font-size:10px;font-weight:700;color:#f97316;margin-bottom:2px">📱 Extra Phones (${extraPhones.length})</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${extraPhones.join(', ')}</div>`;
-  if (alerts.length) html += `<div style="font-size:10px;font-weight:700;color:var(--red);margin-bottom:2px">🚨 Alerts</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${alerts.join(', ')}</div>`;
+  if (p.stationBlocks.length) {
+    html += '<div style="font-size:10px;font-weight:700;color:var(--blue);margin-bottom:3px">🏢 Outlook by Station</div>'
+      + '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">'
+      + p.stationBlocks.map(b => {
+          const own = b.station === String(currentStation).toUpperCase();
+          return `<div style="flex:1;min-width:110px;background:${own ? '#11233a' : '#161b26'};border:1px solid ${own ? '#2563eb' : '#2d3748'};border-radius:6px;padding:5px 7px">
+            <div style="font-size:10px;font-weight:800;color:${own ? '#93c5fd' : '#94a3b8'}">${esc(b.station)}${own ? ' <span style="font-size:8px;color:#3b82f6">· ours</span>' : ''}</div>
+            <div style="font-size:9px;color:var(--fg2);line-height:1.6">
+              ${b.routes != null ? 'Routes: <b style="color:#60a5fa">' + esc(b.routes) + '</b><br>' : ''}
+              ${b.reduction != null ? 'Reduction: <b style="color:#f87171">' + esc(b.reduction) + '</b><br>' : ''}
+              ${b.packageCount != null ? 'Pkgs: <b style="color:#10b981">' + esc(b.packageCount) + '</b><br>' : ''}
+              ${b.spr != null ? 'SPR: <b style="color:#a78bfa">' + esc(b.spr) + '</b>' : ''}
+            </div>
+            ${(b.das || []).length ? '<div style="margin-top:4px;padding-top:4px;border-top:1px solid #2d3748;font-size:8px;color:var(--fg3)">DAs: <span style="color:#cbd5e1">' + esc(b.das.join(', ')) + '</span></div>' : ''}
+          </div>`;
+        }).join('')
+      + '</div>';
+  }
+  if (p.crossStationDas.length)
+    html += `<div style="font-size:10px;font-weight:700;color:#38bdf8;margin-bottom:2px">🔀 Running Another Station (${p.crossStationDas.length})</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${p.crossStationDas.map(d => esc(d.name) + ' <span style="color:#38bdf8">' + esc(d.station) + '</span>').join(' · ')}</div>`;
+  if (p.attendance.length)
+    html += `<div style="font-size:10px;font-weight:700;color:var(--green);margin-bottom:2px">✅ Attendance (${p.attendance.length})</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${esc(p.attendance.join(', '))}</div>`;
+  if (p.sweepers.length)
+    html += `<div style="font-size:10px;font-weight:700;color:var(--orange);margin-bottom:2px">🧹 Sweepers</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${p.sweepers.map(esc).join('<br>')}</div>`;
+  if (p.extraPhones.length)
+    html += `<div style="font-size:10px;font-weight:700;color:#f97316;margin-bottom:2px">📱 Extra Phones · ${esc(currentStation)} (${p.extraPhones.length})</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${esc(p.extraPhones.join(', '))}</div>`;
+  if (p.crossStationPhones.length)
+    html += `<div style="font-size:10px;font-weight:700;color:#60a5fa;margin-bottom:2px">🏢 Extra Phones · other stations (${p.crossStationPhones.length})</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${p.crossStationPhones.map(x => esc(x.name) + ' <span style="color:#60a5fa">' + esc(x.station) + '</span>').join(' · ')}</div>`;
+  if (p.alerts.length)
+    html += `<div style="font-size:10px;font-weight:700;color:var(--red);margin-bottom:2px">🚨 Alerts</div><div style="font-size:10px;color:var(--fg2);margin-bottom:8px">${esc(p.alerts.join(', '))}</div>`;
 
   el.innerHTML = html;
 }
@@ -3311,7 +3741,7 @@ function _renderMobileDailyReport(s, fetchErr) {
     </style>
     <div style="margin-bottom:10px;">
       <div class="dly-m-eyebrow"><span class="dly-m-pulse-dot"></span>Live Operations Monitor</div>
-      <div class="dly-m-title">Daily Report <span class="dly-m-title-tag">v27</span></div>
+      <div class="dly-m-title">Daily Report <span class="dly-m-title-tag">v28</span></div>
       <div class="dly-m-meta">
         <b>${_mEsc(s.station || 'global')}</b> · <b>${_mEsc(s.lastDate)}</b> · ${k.opsClosed ? ((k.unclosedCount || 0) + '/' + k.totalCount + ' unclosed') : (k.activeCount + '/' + k.totalCount + ' active')}
         ${isMerged ? ' · <span style="color:#22c55e;">merged ☁</span>' : ' · <span style="color:#f59e0b;">local only</span>'}
@@ -3718,10 +4148,26 @@ async function sharedPush(kind) {
   } catch (e) { return false; }
 }
 
-async function sharedSyncTick(render) {
+// v28: the parameter used to be called `render`, which shadowed the global
+// render() inside this function — so a repaint from here was impossible, and a
+// `typeof render === 'function'` guard silently read the boolean instead.
+// Renamed rather than worked around.
+async function sharedSyncTick(renderOpenList) {
   const a = await sharedPull('vehicles');
   const b = await sharedPull('drivers');
-  if ((a || b) && render && document.getElementById('listsOverlay').classList.contains('open')) renderLists();
+  // v28: THE VIN INDEX IS BUILT ONCE AND CACHED FOR 20 SECONDS, and at boot it
+  // is built from an empty store because the first pull has not landed yet. The
+  // stale index then outlived the data by up to twenty seconds, so every card
+  // and every modal showed no van number in the window the operator is most
+  // likely to be looking. A cache keyed on time cannot know its input changed —
+  // so the writer tells it. Cheap: the index rebuilds on the next lookup.
+  if (a) _vinIdx = null;
+  // Fresh records can also change what a card or a modal says, so redraw rather
+  // than waiting for the next 25s fleet poll to repaint them.
+  if (a || b) {
+    if (renderOpenList && document.getElementById('listsOverlay').classList.contains('open')) renderLists();
+    try { if (_hasEverLoaded) render(); } catch (e) { console.warn('[Radar] repaint after shared sync failed:', e && e.message); }
+  }
   return a + b;
 }
 
@@ -3927,7 +4373,7 @@ function openSettings() {
       <button class="hdr-btn" style="width:100%;padding:10px;color:var(--red);border-color:var(--red)" onclick="if(confirm('Clear all local data and reset?')){localStorage.clear();sessionStorage.clear();location.reload()}">Reset Everything</button>
     </div>
     <div style="text-align:center;color:var(--fg3);font-size:10px;margin-top:20px">
-      <div>Mobile Amazon Radar v27 · A1 v24.04 · GAS v3.31</div>
+      <div>Mobile Amazon Radar v28 · A1 v24.05 · GAS v3.31</div>
       <div style="font-style:italic">By: Andrismar T.</div>
     </div>
   `;
