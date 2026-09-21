@@ -1,7 +1,81 @@
 <!DOCTYPE html>
 <!--
   Mobile Amazon Radar — A2
-  v29 — THE CARD IS A1'S CARD. REQUIRES GAS v3.31 + A1 v24.05.
+  v32 — THE DOCUMENT IS SPLIT BY RATE OF CHANGE, AND THIS DEVICE CAN BE REMEMBERED.
+  REQUIRES GAS v3.32 + A1 v24.07.
+
+  REMEMBER THIS DEVICE. The unlock flag lived in sessionStorage, which is emptied
+  the moment the app closes, so the PIN was asked on every single open. A tick
+  box on the unlock screen moves it to localStorage for that device only. Worth
+  being plain about what is being given up: nothing. The PIN is stored in clear
+  text on the same device that checks it and is compared in the browser, so it
+  never protected the data, and the Apps Script URL sitting beside it in the same
+  storage serves the same driver names and positions to anyone holding it. The
+  real boundary is the phone's own lock screen. Other devices still prompt, and
+  Settings shows the state with a Forget this device button.
+
+  THE PHONE WAS DOWNLOADING THE WHOLE STATION EVERY 25 SECONDS AND ALMOST NONE
+  OF IT HAD CHANGED. A driver's name, van, phone and role flags are settled at
+  dispatch. Their stopsList and TBA maps are the bulk of the payload and appear
+  on no screen until a modal opens. Only a couple of dozen fields actually move
+  between cycles, and those are the ones the board is made of.
+  So A1 v24.07 publishes the same memory three times over, split by how often a
+  field moves rather than by what it means. static is identity and dispatch
+  facts, written only when a hash of it changes, so a quiet shift writes it once
+  and a reassignment still lands on the next cycle. live is everything that
+  moves and is the only thing polled. detail is the heavy arrays, fetched in the
+  background AFTER the first paint and refreshed slowly. Nothing is fetched when
+  a modal opens: a request on tap would trade one kind of lag for a worse one.
+  THE MERGE PUTS IT BACK THE WAY THE REST OF THIS FILE EXPECTS. All ninety-eight
+  driver fields come off one flat object exactly as before, so not a single card,
+  modal, filter, map or report call site knows the document was ever split. That
+  is the whole reason this is a safe change rather than a rewrite.
+  Two details worth knowing. The COUNTS for returns and problem TBAs ride in
+  live even though the arrays are in detail, so those badges are right from the
+  first paint rather than appearing seconds later; a missing badge reads as
+  "this driver has none", which is a different statement from "not loaded yet".
+  And static is refetched not only when A1 says its hash moved but whenever live
+  mentions a driver this phone has never heard of, so a newly added route never
+  renders with numbers and no name.
+  GAS v3.32 stops doing pointless work on the same trip. The old reader searched
+  Drive BY NAME, downloaded megabytes, parsed them, added four scalar fields and
+  re-serialised the lot, sixty times an hour. The new readers splice the metadata
+  in after the opening brace without parsing at all, and remember the Drive file
+  ID so the name search happens once rather than every request.
+  If any of that is missing, the combined document is still written and still
+  served, and this file falls straight back to it. Deploy order does not matter
+  in either direction.
+
+  SYNC STOPPED DEAD AND STAYED STOPPED, AND fetch() HAD NO TIMEOUT. That is the
+  whole bug. On a phone a request in flight when the screen locks, or when the
+  radio hands off between wifi and cellular, does not fail — it hangs, and the
+  promise never settles. fetchData awaited it holding isRefreshing = true, and
+  that flag was cleared on the line AFTER the try/catch, so it was never cleared
+  at all. Every 25s tick from then on hit `if (isRefreshing) return` and turned
+  straight around: no error, no log, nothing on screen but a clock counting up
+  and a list frozen at the last good pull — the morning snapshot, still there six
+  hours later. The ↻ button could not fix it, because it calls the same function
+  and hit the same guard. Three belts now: every request has a deadline and an
+  AbortController, so a hang becomes an ordinary error the retry path already
+  handles; the flag is released in a finally, so no throw, abort or early return
+  can strand it; and a watchdog notices a clock that has stopped advancing and
+  restarts the pull itself.
+
+  AND THE SCREEN NOW ADMITS WHEN THE DATA IS OLD. A successful pull says the
+  phone reached the backend. It says nothing about whether the desktop has
+  written anything since — different facts, and a green "Synced" over six-hour-old
+  numbers reads as the wrong one. Past two minutes the age of the desktop's file
+  becomes the headline; past ten the dot goes amber and it says to check A1.
+
+  BOOT WAS OVER TWO MINUTES BECAUSE FOUR CALLS RACED EACH OTHER. fetchData,
+  fetchDriverInfo, startSharedSync (two requests) and startDebriefCache all fired
+  in the same tick against the same Apps Script deployment, which serialises
+  concurrent requests per user — so the pull the operator is waiting for queued
+  behind three that nothing on the first screen needs, with a multi-megabyte
+  station file over cellular on top. The last good roster is kept in localStorage
+  and painted before the network is asked anything, so names, routes and vans are
+  readable in well under a second; the secondary calls are staggered out of the
+  way instead of racing. Cached data never wears the green dot.
 
   THE DRIVER CARD IS THE DESKTOP'S CARD NOW. The phone had kept a layout of its
   own — three "Pace / Delivered / Total" label-value rows and a wrapped run of
@@ -32,6 +106,14 @@
   so it leaves remainingPkgs correctly and was subtracted nowhere else.
   missingFromStation is excluded now, and zero stops completed forces zero
   packages delivered, both matching A1 exactly.
+
+  THE NAME LINK: A1 NOW SENDS THE SHAPE, BECAUSE THE PHONE CANNOT READ THE
+  SHEET. The desktop learns the DA profile URL from column J of the Driver LIST
+  tab — a gviz read against a sheet only that browser is signed in for. So if the
+  shared driver list was pasted without its URL column there was nothing here to
+  learn from, and the name stayed plain text while the same driver was clickable
+  on the desktop. A1 v24.06 puts its learned template in the cloud push: one
+  short string, and every driver on every phone gets the link.
 
   THE LINKS FIND THEIR RECORD, AND INVENT ONE WHEN THEY MUST. v28 looked a van
   up as store[van] and a driver as store[tid] — the happy path, and a constant
@@ -947,6 +1029,10 @@ html, body {
     <h2>🔒 Mobile Amazon Radar</h2>
     <p>Enter your access PIN to continue.</p>
     <input id="pinInput" class="pin-input" type="password" maxlength="6" inputmode="numeric" pattern="[0-9]*" placeholder="••••">
+    <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--fg2);cursor:pointer">
+      <input type="checkbox" id="pinRemember" checked style="width:15px;height:15px;accent-color:var(--green)">
+      Remember this device
+    </label>
     <button class="pin-submit" onclick="verifyPin()">Unlock</button>
     <div class="pin-error" id="pinError"></div>
     <p style="font-size:8px;color:var(--fg3);font-style:italic;margin-top:12px">Dispatch Radar — By: Andrismar T.</p>
@@ -972,7 +1058,7 @@ html, body {
         <div class="hdr-brand">
           <div class="title"><span class="dot"></span> Mobile Amazon Radar <span id="stationBadge" class="hdr-station" onclick="openStationPicker()">DJE5</span></div>
           <div class="station-line">
-            <span class="sig">v29 · By: Andrismar T.</span>
+            <span class="sig">v32 · By: Andrismar T.</span>
           </div>
         </div>
         <div class="hdr-controls">
@@ -1132,6 +1218,19 @@ const LS_URL = 'dispatch_radar_url';
 const LS_STA = 'dispatch_radar_station';
 const LS_PIN = 'dispatch_radar_pin';
 const LS_AUTHED = 'dispatch_radar_authed';
+// ── v32 REMEMBER THIS DEVICE ────────────────────────────────────────────────
+// The unlock flag has always lived in sessionStorage, which is emptied the
+// moment the app is closed, so the PIN was asked again on every single open.
+// Worth being plain about what that PIN is: it is stored in localStorage in
+// clear text on the same device that checks it, and it is compared here in the
+// browser, so it never protected the data. Sitting beside it in the same
+// storage is the Apps Script URL, which serves the same driver names and
+// positions to anyone holding it. The real boundary is the phone's own lock
+// screen; this is a guard against someone picking up an unlocked phone.
+// Remembering a device therefore gives up nothing that was actually being
+// protected. The trust is per device, it is revocable from Settings, and Reset
+// Everything still clears it along with the rest.
+const LS_TRUSTED = 'dispatch_radar_trusted_device';
 const LS_NOTIFY = 'dispatch_radar_notify';
 
 let cloudUrl = CLOUD_URL || localStorage.getItem(LS_URL) || '';
@@ -1156,6 +1255,50 @@ let _coldAttempts = 0;                  // consecutive empty/failed pulls before
 let _coldRetryTimer = null;
 const COLD_RETRY_MS = 4000;             // fast retry cadence during cold start
 const COLD_MAX_ATTEMPTS = 8;            // ~32s of fast retries, then settle to "no data yet"
+
+// ── v30 EVERY REQUEST GETS A DEADLINE ───────────────────────────────────────
+// THIS IS WHY SYNC STOPPED DEAD AND STAYED STOPPED. fetch() has no timeout. On
+// a phone a request that is in flight when the screen locks, or when the radio
+// hands off between wifi and cellular, does not fail — it hangs, and the promise
+// never settles. fetchData awaited it holding isRefreshing = true, and since
+// that flag was cleared on the line AFTER the try/catch, it was never cleared at
+// all. Every 25s tick from then on hit `if (isRefreshing) return` and turned
+// straight around. No error, no log, nothing on screen except a clock counting
+// up and a driver list frozen at whatever the last good pull happened to hold —
+// which is exactly the morning snapshot the operator was looking at six hours
+// later. The ↻ button could not fix it either, because it calls the same
+// function and hit the same guard.
+//
+// Two changes make that unreachable: a request that has not answered inside its
+// deadline is aborted and becomes an ordinary error the retry path already
+// handles, and the flag is released in a finally so no throw, abort or early
+// return can strand it. The watchdog below is the third belt.
+const FETCH_TIMEOUT_MS = 20000;
+const PULL_TIMEOUT_MS  = 30000;   // the station file is the big one
+
+async function fetchJson(url, opts, timeoutMs) {
+  const ms = timeoutMs || FETCH_TIMEOUT_MS;
+  const ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const timer = setTimeout(() => { try { ctl && ctl.abort(); } catch (_) {} }, ms);
+  try {
+    const r = await fetch(url, Object.assign({ cache: 'no-cache' }, opts || {},
+      ctl ? { signal: ctl.signal } : {}));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } catch (e) {
+    if (e && e.name === 'AbortError') throw new Error('timed out after ' + Math.round(ms / 1000) + 's');
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+// POST with a plain-text content type is how every call here reaches Apps
+// Script without tripping a CORS preflight.
+function postJson(url, bodyObj, timeoutMs) {
+  return fetchJson(url, { method: 'POST', mode: 'cors',
+    headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(bodyObj || {}) }, timeoutMs);
+}
+let _refreshStartedAt = 0;
 let sortMode = 0;
 const SORT_NAMES = ['Route', 'Stops ↓', 'Pkgs ↓', 'Behind', 'Pace'];
 let leafletMap = null;
@@ -1173,9 +1316,27 @@ function checkAuth() {
     // No PIN set — go to setup
     return 'setup';
   }
+  // v32: this device may have been remembered on a previous open.
+  if (isTrustedDevice()) return 'authed';
   const authed = sessionStorage.getItem(LS_AUTHED);
   if (authed === 'true') return 'authed';
   return 'locked';
+}
+
+function isTrustedDevice() {
+  try { return localStorage.getItem(LS_TRUSTED) === 'true'; } catch (_) { return false; }
+}
+function setTrustedDevice(on) {
+  try {
+    if (on) localStorage.setItem(LS_TRUSTED, 'true');
+    else localStorage.removeItem(LS_TRUSTED);
+  } catch (_) { /* private mode: the session flag still covers this run */ }
+}
+function forgetThisDevice() {
+  setTrustedDevice(false);
+  try { sessionStorage.removeItem(LS_AUTHED); } catch (_) {}
+  showToast('This device will ask for the PIN next time it opens');
+  try { if (document.getElementById('settingsOverlay').classList.contains('open')) openSettings(); } catch (_) {}
 }
 
 function verifyPin() {
@@ -1183,6 +1344,8 @@ function verifyPin() {
   const stored = localStorage.getItem(LS_PIN);
   if (input === stored) {
     sessionStorage.setItem(LS_AUTHED, 'true');
+    const rem = document.getElementById('pinRemember');
+    setTrustedDevice(!rem || rem.checked);   // v32
     document.getElementById('pinScreen').style.display = 'none';
     boot();
   } else {
@@ -1234,14 +1397,94 @@ function boot() {
   m.style.minHeight = '0';
   document.getElementById('stationBadge').textContent = currentStation;
   loadNotifyPrefs();
+
+  // ── v30 THE ROSTER IS ON SCREEN BEFORE THE NETWORK IS ASKED ANYTHING ──────
+  // Boot was taking over two minutes and the reason was not one slow call, it
+  // was four of them at once. fetchData, fetchDriverInfo, startSharedSync (two
+  // requests) and startDebriefCache all fired in the same tick, every one of
+  // them against the SAME Apps Script deployment — which serialises concurrent
+  // requests per user. So the pull the operator is actually waiting for queued
+  // behind three requests that nothing on the first screen needs, and the
+  // station file is megabytes over cellular on top of that.
+  //
+  // Two changes. The last good roster is kept in localStorage and painted
+  // immediately, so names, routes and vans are readable in well under a second
+  // on a phone that has run this before. And the secondary calls are staggered
+  // out of the way of the first pull instead of racing it. Nothing is skipped;
+  // it just stops competing.
+  // v31: the static roster is restored too, so the first live pull does not
+  // have to fetch it before anything can be drawn.
+  _partStatic = loadStaticCache();
+  const restored = restoreCachedMemory();
+  if (restored) {
+    _listState = 'ready';
+    try { render(); } catch (_) {}
+    try { setSyncStatus('cached'); } catch (_) {}
+  }
+
   fetchData();
-  fetchDriverInfo();
-  startSharedSync();          // v27: vehicle + driver lists, two-way with A1
-  startDebriefCache();        // v28: the debrief exists whether or not its sheet is open
   refreshTimer = setInterval(fetchData, REFRESH_MS);
-  // Refresh driver info every 5 minutes
+  // v30: the sync watchdog — see fetchData. Cheap, and it is the only thing
+  // that can notice a timer that stopped firing while the phone was asleep.
+  setInterval(_syncWatchdog, 15000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') _syncWatchdog();
+  });
+
+  // Staggered, in the order the screen actually needs them.
+  setTimeout(() => { try { startSharedSync(); } catch (_) {} }, 1200);
+  setTimeout(() => { try { fetchDriverInfo(); } catch (_) {} }, 2500);
+  setTimeout(() => { try { startDebriefCache(); } catch (_) {} }, 4000);
   setInterval(fetchDriverInfo, 300000);
 }
+
+// ── v30 LAST-GOOD ROSTER, KEPT LOCALLY ──────────────────────────────────────
+// Only what the list and the modal read on first paint. stopsList and the TBA
+// maps are the bulk of a driver record and none of it is on the first screen,
+// so they are dropped — this has to stay small enough to write every 25s
+// without the phone noticing, and localStorage is synchronous.
+const LS_MEM = 'dispatch_radar_last_memory';
+const CACHE_WRITE_MS = 120000;
+let _cacheWroteAt = 0;
+function cacheMemory(force) {
+  try {
+    if (!memory || !memory.drivers) return;
+    // Synchronous, on the main thread, and only ever read at boot — so once
+    // every two minutes is plenty and every 25s would be felt.
+    if (!force && _cacheWroteAt && (Date.now() - _cacheWroteAt) < CACHE_WRITE_MS) return;
+    const lite = { _cachedAt: Date.now(), station: currentStation,
+                   lastUpdated: memory.lastUpdated, _cloudPushTs: memory._cloudPushTs,
+                   _fileModified: memory._fileModified, _daUrlTemplate: memory._daUrlTemplate,
+                   vehicleMapCache: memory.vehicleMapCache || {}, drivers: {} };
+    Object.keys(memory.drivers).forEach(k => {
+      const d = memory.drivers[k]; if (!d) return;
+      const c = {}; for (const f in d) {
+        if (f === 'stopsList' || f === 'tbas' || f === 'returnedTbas' ||
+            f === 'stopSnapshots' || f === 'paceHistory' || f === 'inactivityLog') continue;
+        c[f] = d[f];
+      }
+      lite.drivers[k] = c;
+    });
+    localStorage.setItem(LS_MEM, JSON.stringify(lite));
+    _cacheWroteAt = Date.now();
+  } catch (_) { /* quota or private mode — the cache is an optimisation, never a dependency */ }
+}
+function restoreCachedMemory() {
+  try {
+    const raw = localStorage.getItem(LS_MEM);
+    if (!raw) return false;
+    const d = JSON.parse(raw);
+    if (!d || !d.drivers || !Object.keys(d.drivers).length) return false;
+    if (d.station !== currentStation) return false;
+    // A roster from a previous shift is history, not a head start.
+    if (!d._cachedAt || (Date.now() - d._cachedAt) > 20 * 3600 * 1000) return false;
+    memory = d;
+    _cacheOnly = true;      // cleared by the first live pull
+    console.log('[Radar] restored ' + Object.keys(d.drivers).length + ' drivers from cache');
+    return true;
+  } catch (_) { return false; }
+}
+let _cacheOnly = false;
 
 function saveSetup() {
   const url = document.getElementById('setup-url').value.trim();
@@ -1252,6 +1495,7 @@ function saveSetup() {
   localStorage.setItem(LS_URL, cloudUrl);
   localStorage.setItem(LS_PIN, pin);
   sessionStorage.setItem(LS_AUTHED, 'true');
+  setTrustedDevice(true);   // v32: the device that just set the PIN is trusted
   boot();
 }
 
@@ -1292,22 +1536,209 @@ function saveNotifyPrefs() {
 //  DATA FETCHING
 // ═══════════════════════
 
+// ══════════════════════════════════════════════════════════════════════════
+// ================  v31  THE SPLIT STORE, READ IN THREE PARTS  =============
+// ══════════════════════════════════════════════════════════════════════════
+// The phone was downloading the entire station document every 25 seconds, and
+// almost none of it had changed. A1 v24.07 now publishes the same memory as
+// three documents split by how often a field actually moves:
+//
+//   static — identity and dispatch facts. Written only when a hash of it
+//            changes, so a quiet shift writes it once. Cached on this phone and
+//            reused across boots, which is why a warm start has names and vans
+//            before the network is touched.
+//   live   — everything that moves. This is the only thing polled, and it is a
+//            few KB rather than a few MB.
+//   detail — stopsList, the TBA maps, pace and idle history. None of it appears
+//            on the list screen, so it is fetched in the background AFTER the
+//            first render and refreshed slowly. Nothing is fetched when a modal
+//            opens, because a request on tap would trade one kind of lag for a
+//            worse one.
+//
+// THE MERGE PUTS IT BACK THE WAY THE REST OF THIS FILE EXPECTS. Every one of the
+// ninety-eight driver fields the cards, modal, filters, map and report read
+// comes off one flat object, exactly as before. Not a single call site knows the
+// document was ever split, which is the whole reason this is a safe change.
+//
+// ── THE TRANSPORT SEAM ───────────────────────────────────────────────────────
+// pullPart is the ONLY place that knows how a part is fetched. Moving the live
+// channel to a push transport later replaces this one function, not the thirty
+// call sites downstream of it.
+const LS_STATIC = 'dispatch_radar_static';
+const DETAIL_REFRESH_MS = 120000;
+
+let _partStatic = null;     // { drivers, hash, _daUrlTemplate, vehicleMapCache }
+let _partLive   = null;
+let _partDetail = null;
+let _splitMode  = null;     // null = untried, true = available, false = fall back
+let _splitProbedAt = 0;
+const SPLIT_REPROBE_MS = 300000;   // five minutes
+let _detailAt   = 0;
+let _detailInFlight = false;
+
+function pullPart(part) {
+  const action = 'pull' + part.charAt(0).toUpperCase() + part.slice(1);
+  return postJson(cloudUrl + '?action=' + action + '&station=' + currentStation,
+    { station: currentStation, part: part },
+    part === 'detail' ? PULL_TIMEOUT_MS : FETCH_TIMEOUT_MS);
+}
+
+function saveStaticCache(doc) {
+  try {
+    localStorage.setItem(LS_STATIC, JSON.stringify({
+      station: currentStation, at: Date.now(), doc: doc
+    }));
+  } catch (_) { /* an optimisation, never a dependency */ }
+}
+function loadStaticCache() {
+  try {
+    const raw = localStorage.getItem(LS_STATIC);
+    if (!raw) return null;
+    const w = JSON.parse(raw);
+    if (!w || w.station !== currentStation || !w.doc || !w.doc.drivers) return null;
+    if (!w.at || (Date.now() - w.at) > 20 * 3600 * 1000) return null;
+    return w.doc;
+  } catch (_) { return null; }
+}
+
+// static → detail → live, in that order, so the freshest channel wins any
+// overlap. By construction the three field sets are disjoint; the ordering is
+// there so that if that ever stops being true, the answer is still the live one.
+function composeDrivers() {
+  const s = (_partStatic && _partStatic.drivers) || {};
+  const l = (_partLive   && _partLive.drivers)   || {};
+  const v = (_partDetail && _partDetail.drivers) || {};
+  const out = {};
+  Object.keys(l).forEach(tid => {
+    out[tid] = Object.assign({}, s[tid] || {}, v[tid] || {}, l[tid]);
+  });
+  // A driver static knows about but live has not reported yet still appears,
+  // rather than vanishing from the board between cycles.
+  Object.keys(s).forEach(tid => {
+    if (!out[tid]) out[tid] = Object.assign({}, s[tid], v[tid] || {});
+  });
+  return out;
+}
+
+function composeMemory() {
+  if (!_partLive) return null;
+  const m = {
+    station: currentStation,
+    drivers: composeDrivers(),
+    lastUpdated: _partLive.updatedAt || _partLive._fileModified || Date.now(),
+    _cloudPushTs: _partLive._cloudPushTs || _partLive.updatedAt,
+    _fileModified: _partLive._fileModified,
+    _servedAt: _partLive._servedAt,
+    _gasVersion: _partLive._gasVersion,
+    _split: true,
+    _safetyBroadcast: _partLive._safetyBroadcast || null,
+    vehicleMapCache: (_partStatic && _partStatic.vehicleMapCache) || {},
+    _daUrlTemplate: (_partStatic && _partStatic._daUrlTemplate) || ''
+  };
+  return m;
+}
+
+// Apps Script serialises requests per user, so two sequential calls cost two
+// full round trips. On a phone with no cached roster we already KNOW both parts
+// are needed, so they go out together and the first-ever boot costs one round
+// trip instead of two. Every later boot has the roster cached and asks only for
+// live, which is the common case by a wide margin.
+async function fetchSplit() {
+  const haveStatic = !!(_partStatic && _partStatic.drivers);
+  const [live, upfront] = await Promise.all([
+    pullPart('live'),
+    haveStatic ? Promise.resolve(null) : pullPart('static').catch(() => null)
+  ]);
+  if (!live || live.status === 'error' || live._empty) return null;
+  if (!live.drivers || typeof live.drivers !== 'object' || !Object.keys(live.drivers).length) return null;
+  _partLive = live;
+
+  const adopt = (s) => {
+    if (!s || s._empty || !s.drivers || !Object.keys(s.drivers).length) return false;
+    _partStatic = s;
+    saveStaticCache(s);
+    _daUrlTpl = null; _vehUrlTpl = null; _urlTplAt = 0;   // a new template may have arrived
+    return true;
+  };
+  if (upfront) adopt(upfront);
+
+  // Beyond the first load, static is refetched when A1 says its hash moved or
+  // when live mentions a driver static has never heard of. That second case is
+  // what stops a newly added route rendering with numbers and no name while it
+  // waits for a scheduled check that may be a whole shift away.
+  const known = (_partStatic && _partStatic.drivers) || null;
+  const unknownDriver = !known || Object.keys(live.drivers).some(t => !known[t]);
+  const hashMoved = !!(live.staticHash && _partStatic && live.staticHash !== _partStatic.hash);
+  if (!_partStatic || hashMoved || unknownDriver) {
+    try { adopt(await pullPart('static')); }
+    catch (e) { console.warn('[Radar] static pull failed, keeping the cached copy:', e && e.message); }
+  }
+  return composeMemory();
+}
+
+// Detail rides behind the first paint and then refreshes slowly. It never
+// blocks anything, and a failure costs the modal some history, nothing else.
+async function prefetchDetail(force) {
+  if (_splitMode !== true || _detailInFlight) return;
+  if (!force && _detailAt && (Date.now() - _detailAt) < DETAIL_REFRESH_MS) return;
+  _detailInFlight = true;
+  try {
+    const d = await pullPart('detail');
+    if (d && !d._empty && d.drivers) {
+      _partDetail = d;
+      _detailAt = Date.now();
+      const m = composeMemory();
+      if (m) { memory = m; try { render(); } catch (_) {} }
+    }
+  } catch (e) {
+    console.warn('[Radar] detail prefetch failed:', e && e.message);
+  } finally {
+    _detailInFlight = false;
+  }
+}
+
 async function fetchData() {
-  if (isRefreshing) return;
+  // v30: a stuck flag is now self-clearing. If the previous call really is still
+  // in flight it owns the slot; if it has been sitting there longer than its own
+  // deadline could possibly allow, it is dead and this call takes over.
+  if (isRefreshing) {
+    if (_refreshStartedAt && (Date.now() - _refreshStartedAt) < (PULL_TIMEOUT_MS + 5000)) return;
+    console.warn('[Radar] previous pull never finished — taking over');
+  }
   isRefreshing = true;
-  setSyncStatus('syncing');
+  _refreshStartedAt = Date.now();
+  try { setSyncStatus('syncing'); } catch (_) {}
 
   try {
-    // V3.2: Use POST ?action=pull to bypass GAS CDN caching
-    // GET responses are CDN-cached by Google for up to 30 minutes;
-    // POST responses are NEVER cached, giving near-live data freshness.
-    const resp = await fetch(cloudUrl + '?action=pull&station=' + currentStation, {
-      method: 'POST', mode: 'cors', cache: 'no-cache',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ station: currentStation })
-    });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
+    // v31: the split store first, the whole document only as a fallback. See
+    // fetchSplit. Everything below this line is unchanged: it receives a
+    // memory-shaped object either way and cannot tell which path produced it.
+    let data = null;
+    // Having fallen back once, re-probe occasionally. Otherwise a phone left
+    // open while A1 and GAS are upgraded would keep pulling the whole document
+    // until someone thought to reload it, and nobody would think to.
+    if (_splitMode === false && (Date.now() - _splitProbedAt) > SPLIT_REPROBE_MS) {
+      _splitMode = null;
+      _splitProbedAt = Date.now();
+    }
+    if (_splitMode !== false) {
+      try { data = await fetchSplit(); } catch (se) { console.warn('[Radar] split pull failed:', se && se.message); }
+      if (data) {
+        if (_splitMode !== true) console.log('[Radar] split store available — polling live only');
+        _splitMode = true;
+      } else {
+        _splitMode = false;
+        _splitProbedAt = Date.now();
+        console.log('[Radar] split store not available — using the combined document');
+      }
+    }
+    if (!data) {
+      // V3.2: Use POST ?action=pull to bypass GAS CDN caching
+      // GET responses are CDN-cached by Google for up to 30 minutes;
+      // POST responses are NEVER cached, giving near-live data freshness.
+      data = await postJson(cloudUrl + '?action=pull&station=' + currentStation,
+        { station: currentStation }, PULL_TIMEOUT_MS);
+    }
     // v24 KEEP-LAST-GOOD: pullMemoryFresh returns {drivers:{}, _empty:true} for an
     // empty/absent station file, and {} is truthy — so the old `if (data.drivers)`
     // adopted it and re-rendered blank on every blip, causing the viewer to flicker
@@ -1331,8 +1762,12 @@ async function fetchData() {
         const serveLag = data._servedAt - data._fileModified;
         console.log(`[Radar] ✅ Fresh pull via POST | GAS ${data._gasVersion || '?'} | serve lag: ${(serveLag/1000).toFixed(1)}s | file age: ${((Date.now() - data._fileModified)/1000).toFixed(0)}s`);
       }
+      _cacheOnly = false;   // v30: live data has landed, the cache is no longer what is on screen
       setSyncStatus('live');
-      render();
+      try { render(); } catch (re) { console.error('[Radar] render failed:', re); }
+      cacheMemory();        // v30: so the next boot paints instantly
+      // v31: the heavy arrays follow the first paint rather than delaying it.
+      setTimeout(() => { prefetchDetail(false); }, 400);
     } else {
       // Empty/blip pull. If we already have good data for THIS station, keep it on
       // screen instead of wiping to blank — just note we're waiting on a fresh push.
@@ -1377,10 +1812,30 @@ async function fetchData() {
         _coldRetryTimer = setTimeout(() => { _coldRetryTimer = null; fetchData(); }, COLD_RETRY_MS);
       }
     }
-    if (memory.drivers) render();
+    try { if (memory.drivers) render(); } catch (re) { console.error('[Radar] render failed:', re); }
+  } finally {
+    // v30: the one line that matters. Nothing above — a throw, an abort, an
+    // early return, a render that blows up — can leave sync wedged now.
+    isRefreshing = false;
+    _refreshStartedAt = 0;
   }
+}
 
-  isRefreshing = false;
+// v30: the third belt. Even with the deadline and the finally, a timer that a
+// backgrounded tab never fires is still possible, so a slow heartbeat notices a
+// clock that has stopped advancing and restarts the pull itself.
+function _syncWatchdog() {
+  if (!cloudUrl) return;
+  const since = lastFetch ? (Date.now() - lastFetch) : Infinity;
+  if (since > REFRESH_MS * 3) {
+    if (isRefreshing && _refreshStartedAt && (Date.now() - _refreshStartedAt) > (PULL_TIMEOUT_MS + 5000)) {
+      isRefreshing = false; _refreshStartedAt = 0;
+    }
+    if (!isRefreshing) {
+      console.warn('[Radar] watchdog: no successful pull in ' + Math.round(since / 1000) + 's — retrying');
+      fetchData();
+    }
+  }
 }
 
 // v24: Safety events with cloud→live-API fallback.
@@ -1418,8 +1873,7 @@ async function fetchSafetyEventsWithFallback() {
 // ── Driver Info (personal phone, email, flex) from cloud ──
 async function fetchDriverInfo() {
   try {
-    const resp = await fetch(cloudUrl + '?action=driverInfo&station=' + currentStation, { mode: 'cors', cache: 'no-cache' });
-    const data = await resp.json();
+    const data = await fetchJson(cloudUrl + '?action=driverInfo&station=' + currentStation, { mode: 'cors' });
     if (data && data.drivers) {
       driverInfoMap = data.drivers;
       console.log('[Radar] Driver info loaded:', Object.keys(driverInfoMap).length, 'entries');
@@ -1460,6 +1914,7 @@ function forceRefresh() {
   // phone had not fetched yet — the one case the operator most wanted it for.
   refreshDebriefCache('manual-refresh');
   sharedSyncTick(false);
+  prefetchDetail(true);      // v31: ↻ means everything, including the modal history
 }
 
 // V3.2: Get vehicle ID for a driver — reads from vehicleMapCache (synced from desktop)
@@ -1483,27 +1938,47 @@ function getVehicleId(d) {
 function setSyncStatus(status, detail) {
   const dot = document.getElementById('syncDot');
   const label = document.getElementById('syncLabel');
+  if (!dot || !label) return;   // v30: never throw from a status update
   dot.className = 'sync-dot';
+  const btn = document.getElementById('syncBtn');
 
   if (status === 'live') {
     dot.classList.add('live');
     // V3.2: Show actual data age if diagnostic metadata is available
-    let ageStr = '';
-    if (memory._fileModified) {
-      const ageSec = Math.round((Date.now() - memory._fileModified) / 1000);
-      if (ageSec < 60) ageStr = ` · ${ageSec}s old`;
-      else if (ageSec < 3600) ageStr = ` · ${Math.round(ageSec / 60)}m old`;
-      else ageStr = ` · ${Math.round(ageSec / 3600)}h old`;
+    // v30: AND SAY SO WHEN IT IS OLD. This pull succeeding says the phone
+    // reached the backend; it says nothing about whether the desktop has
+    // written anything since. Those are different facts and the operator was
+    // reading one as the other — a screen showing six-hour-old numbers under a
+    // green "Synced" is worse than one that admits it. Past two minutes the
+    // age is the headline, and past ten the dot goes amber, because at that
+    // point the thing to check is A1's push, not the phone.
+    let ageSec = null;
+    if (memory._fileModified) ageSec = Math.round((Date.now() - memory._fileModified) / 1000);
+    const fmt = s => s < 60 ? s + 's' : s < 3600 ? Math.round(s / 60) + 'm' : Math.round(s / 3600) + 'h';
+    if (ageSec != null && ageSec > 600) {
+      dot.classList.remove('live'); dot.classList.add('err');
+      label.textContent = '⚠ Desktop data is ' + fmt(ageSec) + ' old — check A1 is pushing';
+    } else if (ageSec != null && ageSec > 120) {
+      label.textContent = '● Synced · desktop data ' + fmt(ageSec) + ' old';
+    } else {
+      label.textContent = '● Synced' + (ageSec != null ? ' · ' + fmt(ageSec) + ' old' : '')
+        + ' · ' + new Date(lastFetch).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
     }
-    label.textContent = '● Synced' + ageStr + ' · ' + new Date(lastFetch).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-    document.getElementById('syncBtn').classList.add('synced');
+    if (btn) btn.classList.add('synced');
+  } else if (status === 'cached') {
+    // v30: the roster came off this phone's own disk. It is real and it is
+    // useful, but nothing has confirmed it this session, so it never wears the
+    // green dot.
+    const _n = (memory && memory.drivers) ? Object.keys(memory.drivers).length : 0;
+    label.textContent = '⏳ ' + _n + ' drivers from cache · updating…';
+    if (btn) btn.classList.remove('synced');
   } else if (status === 'syncing') {
-    label.textContent = '☁️ Syncing...';
-    document.getElementById('syncBtn').classList.remove('synced');
+    label.textContent = _cacheOnly ? '☁️ Updating cached list…' : '☁️ Syncing...';
+    if (btn) btn.classList.remove('synced');
   } else if (status === 'connecting') {
     // v24 FIX #4: cold-start, waiting on the first data push for this station
     label.textContent = '⏳ Connecting to ' + currentStation + '…';
-    document.getElementById('syncBtn').classList.remove('synced');
+    if (btn) btn.classList.remove('synced');
   } else if (status === 'error') {
     dot.classList.add('err');
     label.textContent = '✗ ' + (detail || 'Offline');
@@ -1514,7 +1989,7 @@ function setSyncStatus(status, detail) {
     dot.classList.add('live');
     const _cnt = (memory && memory.drivers) ? Object.keys(memory.drivers).length : 0;
     label.textContent = '● ' + _cnt + ' drv · last update ' + (detail || 'just now');
-    document.getElementById('syncBtn').classList.add('synced');
+    if (btn) btn.classList.add('synced');
   }
 }
 
@@ -2106,7 +2581,12 @@ function buildCard(d) {
   if (d.coveredBySweeper && !d.isSweeper && !d.isFlexRoute) badges.push(['#fb923c40', '#fb923c', `🧹 ${d.coveredBySweeperName || 'Sweeper'}`]);
   if ((d.missing || 0) > 0) badges.push(['#d946ef40', '#d946ef', `❓ ${d.missing}`]);
   if ((d.returns || 0) > 0) badges.push(['#ef444440', '#ef4444', `🔙 ${d.returns}`]);
-  if (d.returnedTbas && d.returnedTbas.length > 0) badges.push(['#a78bfa40', '#a78bfa', `↩️ ${d.returnedTbas.length}`]);
+  // v31: the ARRAY is in the detail document and the COUNT rides in live, so
+  // this badge is correct from the first paint instead of appearing seconds
+  // later. A missing badge reads as "this driver has none", which is a
+  // different statement from "not loaded yet".
+  const _retTbaN = Array.isArray(d.returnedTbas) ? d.returnedTbas.length : (d.returnedTbasCount || 0);
+  if (_retTbaN > 0) badges.push(['#a78bfa40', '#a78bfa', `↩️ ${_retTbaN}`]);
   if (d.routeChanged && d.previousRoutes && d.previousRoutes.length > 0 && !d.isSweeper && !d.isFlexRoute && !d.isHelper)
     badges.push(['#f9731640', '#f97316', '🔄 Reassigned']);
 
@@ -2517,6 +2997,12 @@ function openModal(tid) {
       </div>`;
     });
     tbaHtml += '</div>';
+  } else if ((d.tbasCount || 0) > 0) {
+    // v31: live carries the count, detail carries the list. If the list has not
+    // arrived yet, say so rather than rendering nothing, which would read as
+    // "no problem TBAs" when there are in fact several.
+    tbaHtml = `<div class="modal-section"><div class="modal-section-title" style="color:var(--purple)">📦 Problem TBAs (${d.tbasCount})</div>
+      <div style="font-size:10px;color:var(--fg3)">Loading the list…</div></div>`;
   }
 
   // Returned TBAs
@@ -2527,6 +3013,14 @@ function openModal(tid) {
       retTbaHtml += `<div style="font-size:9px;color:#a78bfa;padding:2px 0;border-bottom:1px solid var(--bg3);font-family:monospace;user-select:all">${tba}</div>`;
     });
     retTbaHtml += '</div>';
+  } else if ((d.returnedTbasCount || 0) > 0) {
+    retTbaHtml = `<div class="modal-section"><div class="modal-section-title" style="color:#a78bfa">↩️ Returned TBAs (${d.returnedTbasCount})</div>
+      <div style="font-size:10px;color:var(--fg3)">Loading the list…</div></div>`;
+  }
+  // If either list is still missing, ask for it now rather than on a timer.
+  if (((d.tbasCount || 0) > 0 && !d.tbas) || ((d.returnedTbasCount || 0) > 0 && !d.returnedTbas)
+      || (!d.stopsList && _splitMode === true && !_detailAt)) {
+    prefetchDetail(true);
   }
 
   document.getElementById('modalContent').innerHTML = `
@@ -2875,13 +3369,8 @@ function debriefIsCurrentShift(doc) {
 // have re-stamped yesterday's prose as today's.
 async function pullDebriefFromCloud() {
   try {
-    const resp = await fetch(cloudUrl + '?action=debriefPull&station=global&_cb=' + Date.now(), {
-      method: 'POST', mode: 'cors', cache: 'no-cache',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ station: 'global' })
-    });
-    if (!resp.ok) return null;
-    const data = await resp.json();
+    const data = await postJson(cloudUrl + '?action=debriefPull&station=global&_cb=' + Date.now(),
+      { station: 'global' });
     if (!data || !data.raw) return null;
     if (!debriefIsCurrentShift(data)) {
       console.log('[Radar] debrief is from shift ' + debriefShiftDateOf(data) + ', current is ' + shiftDateET() + ' — ignored');
@@ -2945,6 +3434,7 @@ async function requestFromA1(tid) {
     doc = await refreshDebriefCache('manual');
     await fetchData();
     await sharedSyncTick(false);
+    await prefetchDetail(true);
   } catch (e) { /* fall through to the report below */ }
   btns.forEach(b => { b.disabled = false; b.textContent = '↻ Request from A1'; });
   if (tid && document.getElementById('driverModal').classList.contains('open')) {
@@ -3075,12 +3565,7 @@ async function renderDebriefBody() {
     // Load nightly report from cloud — v24: POST reportPull bypasses the ~30min
     // CDN cache that GET responses are subject to.
     try {
-      const resp = await fetch(cloudUrl + '?action=reportPull&station=global', {
-        method: 'POST', mode: 'cors', cache: 'no-cache',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ station: 'global' })
-      });
-      const data = await resp.json();
+      const data = await postJson(cloudUrl + '?action=reportPull&station=global', { station: 'global' });
       nightlyReportData = data;
       renderNightlyReport(data);
     } catch(e) {
@@ -3329,12 +3814,7 @@ async function saveNightlyReport() {
   nightlyReportData.savedAt = Date.now();
   nightlyReportData._lastSource = 'A2-mobile';
   try {
-    const resp = await fetch(cloudUrl + '?action=report&station=global&src=A2', {
-      method: 'POST', mode: 'cors', cache: 'no-cache',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(nightlyReportData)
-    });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    await postJson(cloudUrl + '?action=report&station=global&src=A2', nightlyReportData);
     if (btn) btn.textContent = '✅ Saved!';
     showToast('Report saved to cloud');
     setTimeout(() => { if (btn) btn.textContent = '💾 Save Report'; }, 2000);
@@ -3370,11 +3850,7 @@ async function saveDebriefToCloud() {
   };
 
   try {
-    const _r = await fetch(cloudUrl + '?action=debrief&station=' + currentStation, {
-      method: 'POST', mode: 'cors', cache: 'no-cache',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify(payload)
-    });
+    const _r = { ok: true, json: async () => await postJson(cloudUrl + '?action=debrief&station=' + currentStation, payload) };
     // The backend refuses a write that is older than what it holds and answers
     // kept:true. That is not a failure, but it is emphatically not a save, and
     // telling the operator "Saved" when their text was discarded is the worst
@@ -3599,11 +4075,8 @@ async function openReports() {
   let fetchErr = null;
   try {
     if (cloudUrl) {
-      const resp = await fetch(cloudUrl + '?action=dailySnapshot&station=global');
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data && data.kpi) snap = data;
-      }
+      const data = await fetchJson(cloudUrl + '?action=dailySnapshot&station=global', { mode: 'cors' }, 25000);
+      if (data && data.kpi) snap = data;
     }
   } catch (e) { fetchErr = e; }
 
@@ -4015,7 +4488,7 @@ function _renderMobileDailyReport(s, fetchErr) {
     </style>
     <div style="margin-bottom:10px;">
       <div class="dly-m-eyebrow"><span class="dly-m-pulse-dot"></span>Live Operations Monitor</div>
-      <div class="dly-m-title">Daily Report <span class="dly-m-title-tag">v29</span></div>
+      <div class="dly-m-title">Daily Report <span class="dly-m-title-tag">v32</span></div>
       <div class="dly-m-meta">
         <b>${_mEsc(s.station || 'global')}</b> · <b>${_mEsc(s.lastDate)}</b> · ${k.opsClosed ? ((k.unclosedCount || 0) + '/' + k.totalCount + ' unclosed') : (k.activeCount + '/' + k.totalCount + ' active')}
         ${isMerged ? ' · <span style="color:#22c55e;">merged ☁</span>' : ' · <span style="color:#f59e0b;">local only</span>'}
@@ -4147,7 +4620,7 @@ let staplesData = { itinerary: '', scanned: '', totalReturns: '', manager: '' };
 async function openStaples() {
   document.getElementById('staplesOverlay').classList.add('open');
   try {
-    const resp = await fetch(cloudUrl + '?action=staples&station=' + currentStation);
+    const resp = { ok: true, json: async () => await fetchJson(cloudUrl + '?action=staples&station=' + currentStation, { mode: 'cors' }) };
     const data = await resp.json();
     if (data && data.itinerary !== undefined) staplesData = data;
   } catch (e) {}
@@ -4436,23 +4909,54 @@ let _daUrlTpl = null, _vehUrlTpl = null, _urlTplAt = 0;
 function _learnUrlTemplates() {
   if (_daUrlTpl !== null && _vehUrlTpl !== null && (Date.now() - _urlTplAt) < 60000) return;
   _daUrlTpl = ''; _vehUrlTpl = '';
+  // v30: A1 SENDS ITS OWN TEMPLATE NOW, AND IT IS THE BEST ANSWER THERE IS.
+  // The desktop learns the DA profile shape from column J of the Driver LIST
+  // sheet — a gviz read against a sheet only that browser is signed in for. The
+  // phone has no route to it, so if the shared driver list happened to be pasted
+  // without its URL column there was nothing here to learn from and the name
+  // stayed plain text, while the very same driver was clickable on the desktop.
+  // A1 v24.06 puts the learned template in the cloud push; one string, and every
+  // driver on every phone gets the link the desktop would have built.
+  try {
+    const t = memory && memory._daUrlTemplate;
+    if (t && String(t).indexOf('{ID}') >= 0) _daUrlTpl = String(t);
+  } catch (_) {}
   const drv = _live(drvStore);
-  for (const k in drv) {
+  if (!_daUrlTpl) for (const k in drv) {
     const u = String(drv[k].url || ''), id = String(drv[k].tid || k || '');
     if (u && id && u.indexOf(id) >= 0) { _daUrlTpl = u.split(id).join('{ID}'); break; }
+  }
+  // Failing both, the driverInfo map may carry a profile URL of the same shape.
+  if (!_daUrlTpl) {
+    try {
+      for (const k in driverInfoMap) {
+        const rec = driverInfoMap[k] || {};
+        const u = String(rec.amazonUrl || rec.url || '');
+        if (u && /[?&]da=/.test(u)) { _daUrlTpl = u.replace(/([?&]da=)[^&]*/, '$1{ID}'); break; }
+      }
+    } catch (_) {}
   }
   const veh = _live(vehStore);
   for (const k in veh) {
     const u = String(veh[k].url || ''), vin = String(veh[k].vin || '').trim();
     if (u && vin && u.indexOf(vin) >= 0) { _vehUrlTpl = u.split(vin).join('{VIN}'); break; }
   }
-  _urlTplAt = Date.now();
+  // Only a POSITIVE result is worth caching. A1's template arrives with the
+  // first pull, so a miss during boot must not be remembered for a minute.
+  if (_daUrlTpl || _vehUrlTpl) _urlTplAt = Date.now();
+  else { _daUrlTpl = null; _vehUrlTpl = null; }
 }
 // Returns { url, exact }. exact=false means the link was derived from a
 // template rather than read off that row.
 function daProfileUrl(tid, name) {
   const rec = drvRecordFor(tid, name);
   if (rec && rec.url) return { url: rec.url, exact: true };
+  // The driverInfo map is a second place a real, per-driver URL can live.
+  try {
+    const info = getBestDriverInfo(name) || {};
+    const u = info.amazonUrl || info.url;
+    if (u) return { url: u, exact: true };
+  } catch (_) {}
   _learnUrlTemplates();
   const id = (rec && rec.tid) || tid;
   if (_daUrlTpl && id) return { url: _daUrlTpl.replace('{ID}', encodeURIComponent(id)), exact: false };
@@ -4483,12 +4987,7 @@ function _mergeInto(local, incoming) {
 
 async function sharedPull(kind) {
   try {
-    const r = await fetch(cloudUrl + '?action=sharedPull&kind=' + kind + '&_cb=' + Date.now(), {
-      method: 'POST', mode: 'cors', cache: 'no-cache',
-      headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ kind })
-    });
-    if (!r.ok) return 0;
-    const j = await r.json();
+    const j = await postJson(cloudUrl + '?action=sharedPull&kind=' + kind + '&_cb=' + Date.now(), { kind });
     if (!j || !j.records) return 0;
     const store = kind === 'vehicles' ? vehStore : drvStore;
     const n = _mergeInto(store, j.records);
@@ -4501,13 +5000,8 @@ async function sharedPull(kind) {
 async function sharedPush(kind) {
   const store = kind === 'vehicles' ? vehStore : drvStore;
   try {
-    const r = await fetch(cloudUrl + '?action=sharedSave&kind=' + kind + '&_cb=' + Date.now(), {
-      method: 'POST', mode: 'cors', cache: 'no-cache',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ records: store, source: 'A2' })
-    });
-    if (!r.ok) return false;
-    const j = await r.json();
+    const j = await postJson(cloudUrl + '?action=sharedSave&kind=' + kind + '&_cb=' + Date.now(),
+      { records: store, source: 'A2' });
     return !!(j && j.status === 'success');
   } catch (e) { return false; }
 }
@@ -4726,6 +5220,19 @@ function openSettings() {
       <div style="font-size:14px;font-weight:700;color:var(--green);margin-bottom:8px">🔒 Security PIN</div>
       <input class="setup-input" type="password" id="settingsPin" value="${pin}" maxlength="6" inputmode="numeric" placeholder="Enter new PIN" style="margin-bottom:8px">
       <button class="hdr-btn" style="width:100%;padding:10px" onclick="updatePin()">Update PIN</button>
+      <div style="margin-top:10px;padding:8px 10px;background:var(--bg2);border:1px solid var(--bg3);border-radius:6px">
+        <div style="font-size:11px;color:${isTrustedDevice() ? 'var(--green)' : 'var(--fg2)'};font-weight:600">
+          ${isTrustedDevice() ? '✓ This device is remembered' : 'This device asks for the PIN each time'}
+        </div>
+        <div style="font-size:10px;color:var(--fg3);margin-top:3px">
+          ${isTrustedDevice()
+            ? 'The PIN is not asked when the app opens here. Other devices still prompt.'
+            : 'Tick "Remember this device" on the unlock screen to stop being asked here.'}
+        </div>
+        ${isTrustedDevice()
+          ? '<button class="hdr-btn" style="width:100%;padding:8px;margin-top:8px;color:var(--amber);border-color:var(--amber)" onclick="forgetThisDevice()">Forget this device</button>'
+          : ''}
+      </div>
     </div>
     <div style="margin-bottom:16px">
       <div style="font-size:14px;font-weight:700;color:var(--blue);margin-bottom:8px">☁️ Cloud URL</div>
@@ -4737,7 +5244,7 @@ function openSettings() {
       <button class="hdr-btn" style="width:100%;padding:10px;color:var(--red);border-color:var(--red)" onclick="if(confirm('Clear all local data and reset?')){localStorage.clear();sessionStorage.clear();location.reload()}">Reset Everything</button>
     </div>
     <div style="text-align:center;color:var(--fg3);font-size:10px;margin-top:20px">
-      <div>Mobile Amazon Radar v29 · A1 v24.05 · GAS v3.31</div>
+      <div>Mobile Amazon Radar v32 · A1 v24.07 · GAS v3.32</div>
       <div style="font-style:italic">By: Andrismar T.</div>
     </div>
   `;
