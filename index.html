@@ -1,7 +1,58 @@
 <!DOCTYPE html>
 <!--
   Mobile Amazon Radar — A2
-  v28 — THE DEBRIEF, THE POSITION AND THE LINKS. REQUIRES GAS v3.31 + A1 v24.05.
+  v29 — THE CARD IS A1'S CARD. REQUIRES GAS v3.31 + A1 v24.05.
+
+  THE DRIVER CARD IS THE DESKTOP'S CARD NOW. The phone had kept a layout of its
+  own — three "Pace / Delivered / Total" label-value rows and a wrapped run of
+  7.5px badges. It carried the same figures, but reading it was a different act
+  from reading A1: the eye had to hunt for a number instead of landing on it.
+  The desktop's structure is adopted whole. A header line with route, name,
+  progress bar and last delivery; a three-column band with the van and status
+  on the left and DELIVERED set against LEFT as matched columns, which is what
+  makes the two comparable at a glance; a footer where Behind or Ahead LEADS,
+  the live status follows, and PACE with the day's total is pinned right. More
+  vertical space per card is the deliberate trade.
+
+  "BEHIND STOPS NOT BEING TRANSMITTED" WAS BEHIND STOPS NOT BEING SEEN. The
+  count was arriving and being rendered — as one more 7.5px pill somewhere in a
+  row of eight. A driver twenty stops behind has to be the loudest thing on
+  their card, so Behind now leads the footer in A1's own red, with A1's own
+  tooltip naming which of the four sources the figure came from. Two real gaps
+  went with it: only _scheduleStopsBehind was read, never the
+  _routesViewBehindCache tier beneath it, so a driver whose live tier had not
+  resolved yet showed the word with no number — which reads as no data at all;
+  and _routesViewStatus was ignored, so a stale DAs verdict of BEHIND could
+  outrank a Routes feed that said the opposite. And when a driver is BOTH on a
+  break and behind, Behind now takes the big footer slot and keeps the "- N
+  Mins" suffix, exactly as the desktop decided in v23.73.
+
+  DELIVERED PACKAGES HAD ALWAYS BEEN COUNTED SLIGHTLY WRONG HERE. Total minus
+  Left counts a PICKUP_FAILED package as delivered: it never went on the van,
+  so it leaves remainingPkgs correctly and was subtracted nowhere else.
+  missingFromStation is excluded now, and zero stops completed forces zero
+  packages delivered, both matching A1 exactly.
+
+  THE LINKS FIND THEIR RECORD, AND INVENT ONE WHEN THEY MUST. v28 looked a van
+  up as store[van] and a driver as store[tid] — the happy path, and a constant
+  miss in practice: a lower-case van key, a record filed under its VIN, a
+  driver added by hand with no TID. A miss rendered plain text, which looks
+  exactly like "there is no link for this one" rather than "the lookup was too
+  strict". Every reasonable key is tried now. Beyond that, the phone finally
+  inherits what A1 has done for years: it LEARNS the URL shape from any row
+  that carries one and derives the rest from the TID or the VIN, so a single
+  driver with a profile link gives every driver a link. A derived link is drawn
+  with a dotted underline and says so on hover, so one that does not resolve is
+  explainable rather than looking like a bug.
+
+  THE BLURRED HEADER WAS THE STATUS BAR SITTING ON TOP OF IT.
+  apple-mobile-web-app-status-bar-style was "black-translucent", which is an
+  instruction to iOS to make the status bar transparent and let the page paint
+  underneath — and iOS renders that strip with its own frosted backdrop, so
+  whatever is under it comes out blurred. viewport-fit=cover extended the
+  layout viewport into the same strip. No amount of padding fixes that, because
+  padding moves content down inside a viewport that still begins under the bar;
+  v28's 100dvh addressed a different cause and left this one standing.
 
   THE POSITION WAS ALWAYS IN THE PAYLOAD AND NEVER ON THE SCREEN. A1 writes a
   driver's last fix to lastKnownLat / lastKnownLon. This file read d.lat and
@@ -93,9 +144,22 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<!-- v29 THE BLURRED HEADER WAS THE STATUS BAR SITTING ON TOP OF IT.
+     "black-translucent" is an instruction to iOS to make the status bar
+     transparent and let the page paint underneath it — and iOS then renders
+     that strip with its own frosted-glass backdrop, so whatever is under it
+     comes out blurred. Paired with viewport-fit=cover, which extends the
+     layout viewport into that same strip, the top of the header was drawn
+     under a blur by design. No amount of padding fixes it, because the
+     padding moves the content down inside a viewport that still starts under
+     the bar; v28's 100dvh addressed a different cause and left this one
+     untouched. "black" gives the status bar its own opaque space and the page
+     starts below it, and dropping viewport-fit=cover lets the browser inset
+     the viewport past the notch on its own. The cost is that the background no
+     longer bleeds behind the status bar, which is worth an unobscured header. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Mobile Amazon Radar">
 <meta name="theme-color" content="#111827">
 <meta name="mobile-web-app-capable" content="yes">
@@ -401,9 +465,21 @@ html, body {
 }
 
 /* ── Driver card (Desktop-matched layout) ── */
+/* ── v29 THE CARD IS THE DESKTOP'S CARD NOW ──────────────────────────────────
+   The phone had been carrying a layout of its own: three "Pace / Delivered /
+   Total" label-value rows and a wrapped row of 7.5px badges. It held the same
+   figures, but reading it was a different act from reading A1 — the eye had to
+   hunt for a number rather than land on it, and the one chip that matters most,
+   Behind, sat somewhere in a run of tiny pills instead of leading the footer.
+   The desktop's structure is adopted wholesale: a header line carrying route,
+   name, progress and last delivery; a three-column band with the van and status
+   on the left and DELIVERED against LEFT as matched columns; and a footer where
+   Behind or Ahead leads, the live status follows, and PACE with the day's total
+   is pinned right. Sizes are scaled for a phone, nothing else is reinterpreted.
+   More vertical space per card is the deliberate trade. */
 .dcard {
-  background: var(--bg2); border-radius: 6px;
-  padding: 7px 9px; cursor: pointer;
+  background: var(--bg2); border-radius: 8px;
+  padding: 8px 10px; cursor: pointer;
   transition: transform .1s;
   position: relative; overflow: hidden;
   border: 1px solid transparent;
@@ -419,33 +495,34 @@ html, body {
 .dcard-left { flex: 1; min-width: 0; overflow: hidden; }
 
 .dcard-name {
-  display: flex; align-items: center; gap: 3px;
-  font-weight: 700; font-size: 12px; color: #fff;
-  overflow: hidden;
+  display: flex; align-items: center; gap: 4px;
+  font-weight: 800; font-size: 13.5px; color: #fff;
+  overflow: hidden; min-width: 0;
 }
 
 .dcard-name .route {
   font-weight: 800; flex-shrink: 0; white-space: nowrap;
+  font-size: 13.5px; color: #fff;
 }
 
 .dcard-name .dname {
   font-weight: 600; white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1;
 }
 
 .dcard-veh {
-  font-size: 9px; color: #d1d5db; font-weight: 600;
-  padding-left: 18px; margin-top: 1px; line-height: 1.2;
+  font-size: 12px; color: #fff; font-weight: 800;
+  white-space: nowrap; line-height: 1.2;
 }
 
 .dcard-right {
-  display: flex; align-items: center; gap: 5px;
-  flex-shrink: 0; padding-top: 1px;
+  display: flex; align-items: center; gap: 6px;
+  flex-shrink: 0; padding-top: 2px;
 }
 
 .dcard-bar {
-  width: 50px; height: 5px;
-  background: var(--bg3); border-radius: 3px; overflow: hidden;
+  width: 56px; height: 7px;
+  background: #374151; border-radius: 3px; overflow: hidden;
 }
 
 .dcard-bar-fill {
@@ -453,8 +530,75 @@ html, body {
 }
 
 .dcard-time {
-  font-size: 9px; color: var(--fg2); font-weight: 500;
+  font-size: 12px; color: #9ca3af; font-weight: 500;
   white-space: nowrap;
+}
+
+/* The three-column band: van + status on the left, then the two count columns
+   side by side so Delivered and Left can be compared at a glance. The desktop
+   uses 1.55/.9/.9; the phone gives the left column slightly less so the numbers
+   never wrap at 360px. */
+.dc-mid {
+  display: grid; grid-template-columns: 1.4fr .85fr .85fr;
+  column-gap: 4px; padding: 7px 0; align-items: start;
+  border-top: 1px solid rgba(255,255,255,.15);
+}
+
+.dc-mid-left {
+  display: flex; flex-direction: column; gap: 4px;
+  min-width: 0; overflow: hidden;
+}
+
+.dc-status-pool {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 3px; row-gap: 3px;
+}
+
+.dc-col { display: flex; flex-direction: column; align-items: center; }
+
+.dc-col-h {
+  font-size: 10px; font-weight: 700; letter-spacing: .4px;
+  text-transform: uppercase; margin-bottom: 3px; white-space: nowrap;
+}
+
+.dc-col-row { display: flex; align-items: baseline; gap: 4px; }
+.dc-col-v { font-size: 13px; font-weight: 600; color: #fff; }
+.dc-col-u { font-size: 10px; color: #8ea0b6; }
+
+/* The desktop keeps this on one line and lets the status chip truncate — on a
+   1080px card "MOVING" clipping to "M." is survivable. At 360px it is not, so
+   the footer wraps instead: everything stays legible and PACE drops to its own
+   line only when it genuinely does not fit. */
+.dc-ft {
+  display: flex; align-items: center; gap: 4px;
+  padding-top: 6px; border-top: 1px solid rgba(255,255,255,.15);
+  flex-wrap: wrap; row-gap: 4px;
+}
+
+.dc-chip {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .2px;
+  text-transform: uppercase; padding: 2px 6px; border-radius: 3px;
+  white-space: nowrap; flex-shrink: 0;
+}
+
+/* The primary status chip is the one allowed to shrink; every other chip in the
+   footer is a fact that must not be truncated. */
+.dc-chip-primary {
+  overflow: hidden; text-overflow: ellipsis;
+  min-width: 0; flex: 0 1 auto;
+}
+
+.dc-pace {
+  font-size: 11px; color: #94a3b8; white-space: nowrap;
+  flex-shrink: 0; margin-left: auto;
+}
+
+.dc-pace b { color: #e5e7eb; }
+.dc-pace .pace-n { color: #f59e0b; font-weight: 800; font-size: 10.5px; }
+
+.dc-mini {
+  font-size: 9px; font-weight: 700; padding: 1px 5px;
+  border-radius: 3px; white-space: nowrap;
 }
 
 .badge-row {
@@ -828,7 +972,7 @@ html, body {
         <div class="hdr-brand">
           <div class="title"><span class="dot"></span> Mobile Amazon Radar <span id="stationBadge" class="hdr-station" onclick="openStationPicker()">DJE5</span></div>
           <div class="station-line">
-            <span class="sig">v28 · By: Andrismar T.</span>
+            <span class="sig">v29 · By: Andrismar T.</span>
           </div>
         </div>
         <div class="hdr-controls">
@@ -1581,6 +1725,67 @@ function drvFixAgeMin(d) {
   return Math.max(0, Math.floor((Date.now() - ts) / 60000));
 }
 
+// ── v29 STOPS BEHIND / AHEAD ────────────────────────────────────────────────
+// The figure only exists in Cortex's Routes payload, where it is exactly
+// plannedCompletedStops minus completedStops. The phone cannot derive it — the
+// DAs backend runs a different stop model and the same subtraction there is
+// wrong by twenty stops — so A1 resolves it through a four-tier chain and
+// writes the winner to _scheduleStopsBehind, with _routesViewBehindCache
+// holding the same value one tier down. Reading only the first of those meant
+// any driver whose live tier had not resolved yet showed the word with no
+// number, which reads as no data at all. Both are consulted now, in A1's own
+// order of freshness.
+function behindStops(d) {
+  if (!d) return 0;
+  const live = Number(d._scheduleStopsBehind);
+  if (Number.isFinite(live) && live > 0) return live;
+  const cache = Number(d._routesViewBehindCache);
+  if (Number.isFinite(cache) && cache > 0) return cache;
+  return Number.isFinite(live) ? Math.max(0, live) : 0;
+}
+function aheadStops(d) {
+  if (!d) return 0;
+  const live = Number(d._scheduleStopsAhead);
+  if (Number.isFinite(live) && live > 0) return live;
+  const cache = Number(d._routesViewAheadCache);
+  if (Number.isFinite(cache) && cache > 0) return cache;
+  return Number.isFinite(live) ? Math.max(0, live) : 0;
+}
+// A1's gate verbatim. A sweeper's stop counts aggregate routes that belong to
+// OTHER drivers, so "behind" has no owner and the chip would be meaningless —
+// they stay excluded. A flex driver owns their block outright and does not.
+// _routesViewStatus overrules a stale DAs verdict of BEHIND, which is the one
+// case where the two feeds genuinely disagree about direction.
+function isBehindSched(d) {
+  if (!d || d.isSweeper || d.inspectionDone) return false;
+  if (d._routesViewStatus === 'AHEAD') return false;
+  return d.progressStatus === 'BEHIND' || d.progressStatus === 'AT_RISK';
+}
+function isAheadSched(d) {
+  if (!d || d.isSweeper || d.inspectionDone) return false;
+  if (onBreak(d)) return false;
+  return d.progressStatus === 'AHEAD' && (d.stopsCompleted || 0) > 10 && aheadStops(d) > 0;
+}
+// Same four answers A1's own tooltip gives, so a bare "Behind" with no number
+// is self-explaining rather than a mystery.
+function behindSourceLabel(d) {
+  return ({
+    'routes':        'Cortex Routes view, this cycle',
+    'routes-cache':  'Cortex Routes view, cached this shift',
+    'routes-ledger': 'Cortex Routes view, restored after reload',
+    'das':           'Cortex DAs view — the Routes feed has no figure for this route yet'
+  })[d && d._behindSrc] || 'no figure available yet';
+}
+
+// Fuel and camera, printed beside the van only when the record carries them, so
+// a van with nothing on file still reads clean. Matches A1's card.
+function vehExtrasFor(van) {
+  const r = vehRecordFor(van);
+  if (!r || (!r.fuel && r.cam !== 'C')) return '';
+  const fuel = r.fuel ? (r.fuel === 'G' ? ' (Gas)' : ' (Diesel)') : '';
+  return `<span style="color:var(--fg3);font-size:9px;font-weight:600">${fuel}${r.cam === 'C' ? ' 📷' : ''}</span>`;
+}
+
 function gpsStatusText(d) {
   if (d.gpsMoving && !d.gpsAtStation) return '🟢 Moving';
   if (d.gpsDeparted) return '🔵 Departed';
@@ -1841,7 +2046,16 @@ function buildCard(d) {
   const pkgsRem = dP;
   const stopsDone = d.stopsCompleted || 0;
   const stopsT = d.stopsTotal || 0;
-  const pkgsDone = Math.max(0, pkgTotal - dP);
+  // v29: A1's own Delivered-packages math, which this had never matched.
+  // Total minus Left silently counts a PICKUP_FAILED package as delivered — it
+  // was never loaded onto the van, so it drops out of remainingPkgs correctly
+  // but was subtracted nowhere else, and a driver still at station with zero
+  // stops done showed packages "delivered". missingFromStation is excluded the
+  // same way returns and missing already are, and a hard backstop forces zero
+  // whenever no stop has actually been completed, since a delivery always
+  // corresponds to one.
+  const _pkgsDoneRaw = Math.max(0, pkgTotal - dP - (d.missingFromStation || 0));
+  const pkgsDone = stopsDone === 0 ? 0 : _pkgsDoneRaw;
 
   // No-break warning
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
@@ -1882,25 +2096,11 @@ function buildCard(d) {
   if (d.hasStaplesDebrief && !d.isFlexRoute) badges.push(['#a78bfa40', '#a78bfa', '🏪 STAPLES']);
   if (d._manuallyRescued && !d.isSweeper && !d.isHelper) badges.push(['#f59e0b40', '#f59e0b', '🆘 Swept']);
   if (noBreakWarn) badges.push(['#f59e0b40', '#f59e0b', '⚠️ NO BREAK']);
-  // ── v26: THE COUNT, AND FLEX IS NO LONGER EXCLUDED (A1 v23.97 / v24.01) ──
-  // Two changes, both already fixed on the desktop and both still wrong here.
-  // (1) The badge read "BEHIND" with no number while A1's card has shown the
-  // stop count since v23.63 — and the count is already in the payload the phone
-  // pulls, as _scheduleStopsBehind, because the desktop deep-clones its whole
-  // memory into the cloud push. It was arriving all along and being dropped on
-  // the floor. (2) !d.isFlexRoute sat in both gates, so an AT or VT driver could
-  // never show behind however far behind they were. A sweeper's stops belong to
-  // other drivers so the exclusion is right for them; a flex driver owns their
-  // block outright. Same reasoning, same fix as the desktop.
-  const _behindN = Number(d._scheduleStopsBehind) || 0;
-  const _aheadN  = Number(d._scheduleStopsAhead)  || 0;
-  const _schedOk = !d.isSweeper && !d.inspectionDone;
-  if (d.progressStatus === 'BEHIND' && _schedOk) badges.push(['#ef444440', '#ef4444', (_behindN > 0 ? _behindN + ' ' : '') + 'BEHIND']);
-  if (d.progressStatus === 'AT_RISK' && _schedOk) badges.push(['#ef444440', '#ef4444', (_behindN > 0 ? _behindN + ' ' : '') + 'AT RISK']);
-  // Ahead keeps A1's own two floors: more than ten stops actually delivered and
-  // a count above zero, so a light early stem cannot read as ahead of schedule.
-  if (d.progressStatus === 'AHEAD' && _schedOk && !onBreak(d) && (d.stopsCompleted || 0) > 10 && _aheadN > 0)
-    badges.push(['#10b98140', '#10b981', _aheadN + ' AHEAD']);
+  // v29: Behind and Ahead are no longer badges in this pool. On the desktop they
+  // LEAD the footer, and burying a 20-stops-behind driver among a run of 7.5px
+  // pills was the reason the operator read them as "not transmitted" — the count
+  // was there, it just never landed on the eye. See the footer block below and
+  // the behindStops / isBehindSched helpers.
   if (d.manuallyDelivered && !d.inspectionDone) badges.push(['#10b98140', '#10b981', '✅ MANUAL']);
   if (d.gotGas && d.state !== 'GETTING GAS') badges.push(['#f59e0b40', '#fde68a', '⛽✅']);
   if (d.coveredBySweeper && !d.isSweeper && !d.isFlexRoute) badges.push(['#fb923c40', '#fb923c', `🧹 ${d.coveredBySweeperName || 'Sweeper'}`]);
@@ -1947,21 +2147,88 @@ function buildCard(d) {
   else if (d.isFlexRoute) rl = '<span style="color:#a855f7;font-size:11px;font-weight:800">📦 FLX</span>';
   else rl = `<span class="route">${d.route || '?'}</span>`;
 
-  // Multi-route line
+  // Multi-route line. v29: inline rather than its own block, because it now
+  // shares the status pool with the chips exactly as it does on the desktop.
   let routesLine = '';
   if (d.isSweeper && Array.isArray(d.allRoutes) && d.allRoutes.length >= 2) {
-    routesLine = `<div style="font-size:8px;color:#fb923c;margin-top:1px;padding-left:16px">Routes: ${[...new Set(d.allRoutes.filter(r => r && !r.includes(',')))].join(', ')}</div>`;
+    routesLine = `<span style="color:#fb923c">Routes: ${[...new Set(d.allRoutes.filter(r => r && !r.includes(',')))].join(', ')}</span>`;
   }
   if (d.isHelper && !d.isSweeper && Array.isArray(d.allRoutes) && d.allRoutes.length >= 2) {
-    routesLine = `<div style="font-size:8px;color:#60a5fa;margin-top:1px;padding-left:16px">🤝 ${[...new Set(d.allRoutes.filter(r => r && !r.includes(',')))].join(', ')}</div>`;
+    routesLine = `<span style="color:#60a5fa">🤝 ${[...new Set(d.allRoutes.filter(r => r && !r.includes(',')))].join(', ')}</span>`;
   }
 
-  // ── Desktop-matched stats block ──
-  const statsBlock = `<div class="dcard-stats-block">
-    <div class="s-row"><span class="s-label">Pace:</span><b>${d.pace || '—'}</b> <span class="s-label" style="margin-left:6px">Stops:</span><b>${stopsRem}</b> <span class="s-label" style="margin-left:6px">Pkgs:</span><b>${pkgsRem}</b></div>
-    <div class="s-row"><span class="s-label">Delivered:</span><b>${stopsDone}</b> <span class="s-label" style="margin-left:6px">Pkgs:</span><b>${pkgsDone}</b></div>
-    <div class="s-row"><span class="s-label">Total:</span><b>${stopsT}</b> <span class="s-label" style="margin-left:6px">Pkgs:</span><b>${pkgTotal}</b></div>
-  </div>`;
+  // ── v29 FOOTER, BUILT THE WAY THE DESKTOP BUILDS IT ────────────────────────
+  // A1's rule, reproduced: a Break or Idle TIMER takes over the whole footer
+  // and reads inline as "Break - 10 Mins". When a driver is both on a timer and
+  // behind, Behind wins the big slot, because that is the more actionable fact
+  // for a dispatcher, and keeps the "- N Mins" suffix. Otherwise Behind and
+  // Ahead lead as their own chips and the status chip follows. Whatever the
+  // footer cannot show is pushed up into the mid-section status pool rather
+  // than dropped — the desktop never shows the same fact twice, and never
+  // silently loses one either.
+  const _timerMin = (() => {
+    if (onBreak(d) && d.currentBreakStart) return Math.floor((Date.now() - d.currentBreakStart) / 60000);
+    if (d.state === 'INACTIVE' && d.currentInactiveStart) {
+      const m = Math.floor((Date.now() - d.currentInactiveStart) / 60000);
+      return m > 0 ? m : null;
+    }
+    return null;
+  })();
+  // A free sweeper is AVAILABLE, and v28 settled that its break is context and
+  // not a state — so it must not seize the footer either.
+  const _hasTimer = _timerMin != null && !sweeperFree(d);
+
+  const _behindN = behindStops(d);
+  const _aheadN  = aheadStops(d);
+  const _isBehind = isBehindSched(d);
+  const _isAhead  = isAheadSched(d);
+  const _behindWord = d.progressStatus === 'AT_RISK' ? 'At Risk' : 'Behind';
+  const _behindTxt = '⚠️ ' + (_behindN > 0 ? _behindN + ' ' : '') + _behindWord;
+
+  // When the footer is a timer, Behind is promoted INTO the timer label rather
+  // than printed twice; when it is not, Behind leads as its own chip.
+  const _ftLabel = (_hasTimer && _isBehind) ? _behindTxt : stateText;
+  const _ftStyle = (_hasTimer && _isBehind)
+    ? 'background:#ef444440;color:#ef4444;'
+    : `background:${stateBg};color:${stateFg};`;
+  const _behindChip = (_isBehind && !_hasTimer)
+    ? `<span class="dc-chip" style="background:#ef444440;color:#ef4444" title="Stops behind schedule — source: ${behindSourceLabel(d)}">${_behindTxt}</span>`
+    : '';
+  const _aheadChip = (_isAhead && !_hasTimer)
+    ? `<span class="dc-chip" style="background:#10b98140;color:#10b981">${_aheadN} Ahead</span>`
+    : '';
+  // Ahead never gets promoted into a timer label, so it escalates to the pool.
+  const _escalated = (_hasTimer && _isAhead)
+    ? [`<span class="dc-mini" style="background:#10b98140;color:#10b981">${_aheadN} Ahead</span>`]
+    : [];
+
+  const _statusChips = _escalated.concat(
+    breakBadge ? [breakBadge.replace('class="badge"', 'class="dc-mini"')] : [],
+    badges.map(b => `<span class="dc-mini" style="background:${b[0]};color:${b[1]}">${b[2]}</span>`)
+  );
+  // The desktop prints "Status:" only when there is no routes line to speak for
+  // itself, since a routes line is self-explanatory.
+  // A1 falls back to a single chip carrying the active status when the pool
+  // would otherwise be empty, so the left column never renders as a bare van
+  // number with dead space beside it. Matched here — except that when the
+  // footer is already leading with that same status and nothing else competes
+  // for the space, repeating it adds nothing, so the pool takes the driver's
+  // progress instead: the one fact the desktop has room for elsewhere and the
+  // phone does not.
+  // The footer shows the plain status UNLESS Behind has taken that slot over
+  // (the timer promotion above) or the status chip is suppressed entirely. In
+  // exactly those cases the pool carries the status; otherwise it would print
+  // the same word twice on one card, so it shows progress instead.
+  const _footerShowsState = (showStateBadge || _hasTimer) && !(_hasTimer && _isBehind);
+  const _poolFallback = _footerShowsState
+    ? (() => {
+        const pctDone = stopsT > 0 ? Math.round((stopsDone / stopsT) * 100) : 0;
+        return `<span class="dc-mini" style="background:rgba(255,255,255,.06);color:#9ca3af">${pctDone}% done</span>`;
+      })()
+    : `<span class="dc-mini" style="background:${stateBg};color:${stateFg}">${stateText}</span>`;
+  const _midLeft = routesLine
+    ? `<span style="font-size:9.5px;line-height:1.3">${routesLine}</span>${_statusChips.join('')}`
+    : `<span style="font-size:9.5px;font-weight:700;color:#9ca3af;flex-shrink:0">Status:</span>${_statusChips.length ? _statusChips.join('') : _poolFallback}`;
 
   return `<div class="dcard" style="${style}" onclick="openModal('${d.id}')">
     <div class="dcard-hdr">
@@ -1970,21 +2237,35 @@ function buildCard(d) {
           ${gd}${d.isPinned ? '📌 ' : ''}${rl}
           <span class="dname">${name}</span>
         </div>
-        ${veh ? `<div class="dcard-veh">${veh}</div>` : ''}
-        ${routesLine}
       </div>
       <div class="dcard-right">
         <div class="dcard-bar"><div class="dcard-bar-fill" style="width:${sp}%;background:${sc}"></div></div>
         <span class="dcard-time">${ld}</span>
       </div>
     </div>
-    <div class="badge-row">
-      ${showStateBadge ? `<span class="badge" style="background:${stateBg};color:${stateFg}">${stateText}</span>` : ''}
-      ${breakBadge}
-      ${badges.map(b => `<span class="badge" style="background:${b[0]};color:${b[1]}">${b[2]}</span>`).join('')}
+    <div class="dc-mid">
+      <div class="dc-mid-left">
+        ${veh ? `<div class="dcard-veh">${veh}${vehExtrasFor(veh)}</div>` : ''}
+        <div class="dc-status-pool">${_midLeft}</div>
+      </div>
+      <div class="dc-col">
+        <div class="dc-col-h" style="color:#22c55e">Delivered</div>
+        <div class="dc-col-row"><span class="dc-col-v">${stopsDone}</span><span class="dc-col-u">stops</span></div>
+        <div class="dc-col-row"><span class="dc-col-v">${pkgsDone}</span><span class="dc-col-u">pkgs</span></div>
+      </div>
+      <div class="dc-col">
+        <div class="dc-col-h" style="color:#38bdf8">Left</div>
+        <div class="dc-col-row"><span class="dc-col-v">${stopsRem}</span><span class="dc-col-u">stops</span></div>
+        <div class="dc-col-row"><span class="dc-col-v">${pkgsRem}</span><span class="dc-col-u">pkgs</span></div>
+      </div>
     </div>
-    ${idleStr}
-    ${statsBlock}
+    <div class="dc-ft">
+      ${_behindChip}${_aheadChip}
+      ${showStateBadge || _hasTimer
+        ? `<span class="dc-chip dc-chip-primary" style="${_ftStyle}">${_ftLabel}${_hasTimer ? ' - ' + _timerMin + ' Mins' : ''}</span>`
+        : ''}
+      <span class="dc-pace"><span class="pace-n">PACE: ${d.pace || '—'}</span> Total: <b>${pkgTotal}</b> pkgs · <b>${stopsT}</b> stops</span>
+    </div>
   </div>`;
 }
 
@@ -2030,7 +2311,7 @@ function openModal(tid) {
   const flexPass = info.flexPass || 'N/A';
   const homeStation = d.homeStation || '';
 
-  // ── v28 THE SAME LINKS THE DESKTOP HAS ──────────────────────────────────
+  // ── v29 THE SAME LINKS THE DESKTOP HAS, AND THEY NOW FIND THEIR RECORD ──
   // On A1 the DA's name opens their Amazon performance page and the van number
   // opens its fleet page. Both URLs already live in the shared lists this phone
   // has held since v27, so the phone was showing plain text for data it had.
@@ -2038,30 +2319,23 @@ function openModal(tid) {
   const _esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
                       .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const _vanUC = (getVehicleId(d) || '').toUpperCase();
-  const _vehRec = _vanUC ? (_live(vehStore)[_vanUC] || null) : null;
-  const _vanUrl = _vehRec && _vehRec.url ? _vehRec.url : '';
+  const _vehRec = vehRecordFor(_vanUC);
+  const _van = vehFleetUrl(_vanUC, d.cortexVin || d.lastKnownVin);
   const _vanHtml = _vanUC
-    ? (_vanUrl
-        ? `<a href="${_esc(_vanUrl)}" target="_blank" rel="noopener" style="color:#93c5fd;font-weight:700;text-decoration:underline;text-underline-offset:2px">🚐 ${_esc(_vanUC)}</a>`
+    ? (_van.url
+        ? `<a href="${_esc(_van.url)}" target="_blank" rel="noopener" title="${_van.exact ? 'Open this vehicle&#39;s fleet page' : 'No URL on file for this van — this link is derived from its VIN and may not resolve'}" style="color:#93c5fd;font-weight:700;text-decoration:underline;text-decoration-style:${_van.exact ? 'solid' : 'dotted'};text-underline-offset:2px">🚐 ${_esc(_vanUC)}</a>`
         : `<span style="color:#d1d5db;font-weight:600">🚐 ${_esc(_vanUC)}</span>`)
     : '';
   const _vanExtras = (_vehRec && (_vehRec.fuel || _vehRec.cam === 'C'))
     ? ` <span style="color:var(--fg3);font-size:9px">${_vehRec.fuel ? (_vehRec.fuel === 'G' ? '(Gas)' : '(Diesel)') : ''}${_vehRec.cam === 'C' ? ' 📷' : ''}</span>`
     : '';
 
-  // The driver record is keyed by TID in the shared list; fall back to a name
-  // match so a driver added by hand without a TID is still linked.
-  const _drvLive = _live(drvStore);
-  let _drvRec = (tid && _drvLive[tid]) || null;
-  if (!_drvRec && d.name) {
-    const _n = String(d.name).toLowerCase().replace(/\s+/g, ' ').trim();
-    for (const k in _drvLive) {
-      if (String(_drvLive[k].name || '').toLowerCase().replace(/\s+/g, ' ').trim() === _n) { _drvRec = _drvLive[k]; break; }
-    }
-  }
-  const _daUrl = (_drvRec && _drvRec.url) || d.amazonUrl || '';
-  const _nameHtml = _daUrl
-    ? `<a href="${_esc(_daUrl)}" target="_blank" rel="noopener" style="color:#93c5fd;text-decoration:underline;text-underline-offset:2px;overflow:hidden;text-overflow:ellipsis">${_esc(displayName)}</a>`
+  // The name is the link to that DA's Amazon page, exactly as on the desktop.
+  // d.amazonUrl wins when the payload carries one; otherwise the shared driver
+  // list answers, and failing that the learned template derives it from the TID.
+  const _da = d.amazonUrl ? { url: d.amazonUrl, exact: true } : daProfileUrl(tid, d.name);
+  const _nameHtml = _da.url
+    ? `<a href="${_esc(_da.url)}" target="_blank" rel="noopener" title="${_da.exact ? 'Open this DA&#39;s Amazon page' : 'No URL on file for this DA — this link is derived from their TID and may not resolve'}" style="color:#93c5fd;text-decoration:underline;text-decoration-style:${_da.exact ? 'solid' : 'dotted'};text-underline-offset:2px;overflow:hidden;text-overflow:ellipsis">${_esc(displayName)}</a>`
     : `<span style="overflow:hidden;text-overflow:ellipsis">${_esc(displayName)}</span>`;
 
   // The route opens that day's board in Cortex. Built from the itinerary the
@@ -3741,7 +4015,7 @@ function _renderMobileDailyReport(s, fetchErr) {
     </style>
     <div style="margin-bottom:10px;">
       <div class="dly-m-eyebrow"><span class="dly-m-pulse-dot"></span>Live Operations Monitor</div>
-      <div class="dly-m-title">Daily Report <span class="dly-m-title-tag">v28</span></div>
+      <div class="dly-m-title">Daily Report <span class="dly-m-title-tag">v29</span></div>
       <div class="dly-m-meta">
         <b>${_mEsc(s.station || 'global')}</b> · <b>${_mEsc(s.lastDate)}</b> · ${k.opsClosed ? ((k.unclosedCount || 0) + '/' + k.totalCount + ' unclosed') : (k.activeCount + '/' + k.totalCount + ' active')}
         ${isMerged ? ' · <span style="color:#22c55e;">merged ☁</span>' : ' · <span style="color:#f59e0b;">local only</span>'}
@@ -4102,6 +4376,96 @@ let listSearch = '';
 function _lsLoad(k) { try { return JSON.parse(localStorage.getItem(k) || '{}') || {}; } catch (e) { return {}; } }
 function _lsSave(k, o) { try { localStorage.setItem(k, JSON.stringify(o || {})); } catch (e) {} }
 function _live(store) { const o = {}; Object.keys(store || {}).forEach(k => { if (store[k] && !store[k]._deleted) o[k] = store[k]; }); return o; }
+
+// ── v29 FINDING THE RECORD, AND FINDING THE URL ─────────────────────────────
+// v28 looked a vehicle up as _live(vehStore)[van] and a driver as
+// _live(drvStore)[tid]. Both are the happy path and both miss constantly in
+// practice: a list imported with a lower-case van key, a van whose record is
+// filed under its VIN, a driver added by hand with no TID. A miss rendered
+// plain text, which looks exactly like "there is no link for this one" rather
+// than "the lookup was too strict" — so the links appeared broken while the
+// data sat in the store. Every reasonable key is tried now, in order of
+// confidence, and the scan only runs when the direct hit fails.
+function vehRecordFor(van) {
+  const v = String(van || '').replace(/[()\[\]]/g, '').trim().toUpperCase();
+  if (!v) return null;
+  const live = _live(vehStore);
+  if (live[v]) return live[v];
+  for (const k in live) {
+    if (String(k).trim().toUpperCase() === v) return live[k];
+  }
+  for (const k in live) {
+    if (String(live[k].van || '').replace(/[()\[\]]/g, '').trim().toUpperCase() === v) return live[k];
+  }
+  return null;
+}
+
+function drvRecordFor(tid, name) {
+  const live = _live(drvStore);
+  const t = String(tid || '').trim();
+  if (t && live[t]) return live[t];
+  if (t) {
+    for (const k in live) {
+      if (String(k).trim() === t || String(live[k].tid || '').trim() === t) return live[k];
+    }
+  }
+  const n = String(name || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!n) return null;
+  for (const k in live) {
+    if (String(live[k].name || '').toLowerCase().replace(/\s+/g, ' ').trim() === n) return live[k];
+  }
+  // Cortex abbreviates a third name ("Jose Estevez B."), the roster does not.
+  // Match on first + last-initial so an abbreviated board name still links.
+  const parts = n.split(' ');
+  if (parts.length < 2) return null;
+  for (const k in live) {
+    const p = String(live[k].name || '').toLowerCase().replace(/\s+/g, ' ').trim().split(' ');
+    if (p.length >= 2 && p[0] === parts[0] && p[1][0] === parts[1][0]) return live[k];
+  }
+  return null;
+}
+
+// ── v29 A URL EVEN WHEN THE ROW HAS NONE ────────────────────────────────────
+// A1 solved this years ago and the phone never inherited it: it LEARNS the URL
+// shape from any row that does carry one, then derives the rest from the TID or
+// VIN. So one driver with a profile link in column J gives every driver a link,
+// and one van with a fleet link gives every van one. A derived link is marked
+// as derived in its tooltip, so a link that turns out not to resolve is
+// immediately explainable rather than looking like a bug — A1's own wording.
+let _daUrlTpl = null, _vehUrlTpl = null, _urlTplAt = 0;
+function _learnUrlTemplates() {
+  if (_daUrlTpl !== null && _vehUrlTpl !== null && (Date.now() - _urlTplAt) < 60000) return;
+  _daUrlTpl = ''; _vehUrlTpl = '';
+  const drv = _live(drvStore);
+  for (const k in drv) {
+    const u = String(drv[k].url || ''), id = String(drv[k].tid || k || '');
+    if (u && id && u.indexOf(id) >= 0) { _daUrlTpl = u.split(id).join('{ID}'); break; }
+  }
+  const veh = _live(vehStore);
+  for (const k in veh) {
+    const u = String(veh[k].url || ''), vin = String(veh[k].vin || '').trim();
+    if (u && vin && u.indexOf(vin) >= 0) { _vehUrlTpl = u.split(vin).join('{VIN}'); break; }
+  }
+  _urlTplAt = Date.now();
+}
+// Returns { url, exact }. exact=false means the link was derived from a
+// template rather than read off that row.
+function daProfileUrl(tid, name) {
+  const rec = drvRecordFor(tid, name);
+  if (rec && rec.url) return { url: rec.url, exact: true };
+  _learnUrlTemplates();
+  const id = (rec && rec.tid) || tid;
+  if (_daUrlTpl && id) return { url: _daUrlTpl.replace('{ID}', encodeURIComponent(id)), exact: false };
+  return { url: '', exact: false };
+}
+function vehFleetUrl(van, vin) {
+  const rec = vehRecordFor(van);
+  if (rec && rec.url) return { url: rec.url, exact: true };
+  _learnUrlTemplates();
+  const v = String((rec && rec.vin) || vin || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  if (_vehUrlTpl && v) return { url: _vehUrlTpl.replace('{VIN}', encodeURIComponent(v)), exact: false };
+  return { url: '', exact: false };
+}
 function _stamp(r) { if (r && typeof r === 'object') r._ts = Date.now(); return r; }
 
 function _mergeInto(local, incoming) {
@@ -4373,7 +4737,7 @@ function openSettings() {
       <button class="hdr-btn" style="width:100%;padding:10px;color:var(--red);border-color:var(--red)" onclick="if(confirm('Clear all local data and reset?')){localStorage.clear();sessionStorage.clear();location.reload()}">Reset Everything</button>
     </div>
     <div style="text-align:center;color:var(--fg3);font-size:10px;margin-top:20px">
-      <div>Mobile Amazon Radar v28 · A1 v24.05 · GAS v3.31</div>
+      <div>Mobile Amazon Radar v29 · A1 v24.05 · GAS v3.31</div>
       <div style="font-style:italic">By: Andrismar T.</div>
     </div>
   `;
