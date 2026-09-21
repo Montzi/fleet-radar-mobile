@@ -1,8 +1,32 @@
 <!DOCTYPE html>
 <!--
   Mobile Amazon Radar — A2
-  v32 — THE DOCUMENT IS SPLIT BY RATE OF CHANGE, AND THIS DEVICE CAN BE REMEMBERED.
-  REQUIRES GAS v3.32 + A1 v24.07.
+  v33 — A SYNC LABEL THAT TELLS THE TRUTH, AND A SPLIT THAT IS NEVER ASSUMED.
+  REQUIRES GAS v3.33 + A1 v24.08.
+
+  IT SAID SYNCED WHILE SHOWING A SNAPSHOT HOURS OLD, AND BOTH HALVES OF THAT
+  WERE MY DOING. The first half: v31 asked for ?action=pullLive immediately and
+  read an unhelpful answer as "not available". doPost in GAS v3.32 and earlier
+  ends in a fallthrough that writes ANY unrecognised POST's body over
+  FleetRadarMemory_<station>.json, so a phone on v31 talking to a v3.31
+  deployment overwrote the station's fleet data with {"station":"DJE5",
+  "part":"live"} every 25 seconds. The keep-last-good branch then did exactly
+  what it was built to do - it saw a document with no drivers, refused to blank
+  the board, and held the last good snapshot - so the screen froze hours behind
+  while every pull kept succeeding. Capability is now a fact the backend states
+  rather than one this file infers from failure: the combined pull carries
+  _gasVersion and _partsSupported, is safe against every deployment, and the
+  split is unlocked only once the answer says so. Nothing is ever POSTed to an
+  action that might not exist.
+  The second half: this ticker rewrote the status label every second from
+  lastFetch, which is when the phone last got an ANSWER. That is a statement
+  about connectivity and nothing else, and it was stamping over the warning
+  v30 added a second after it was drawn - so "Desktop data is 50m old, check A1
+  is pushing" was rendered and erased before anyone could read it. A confident
+  Synced on top of hours-old numbers is worse than no status line at all,
+  because it argues against the evidence on the rest of the screen. The age of
+  the DATA now wins whenever it is known and old; connectivity is still
+  reported and can no longer overrule it.
 
   REMEMBER THIS DEVICE. The unlock flag lived in sessionStorage, which is emptied
   the moment the app closes, so the PIN was asked on every single open. A tick
@@ -1058,7 +1082,7 @@ html, body {
         <div class="hdr-brand">
           <div class="title"><span class="dot"></span> Mobile Amazon Radar <span id="stationBadge" class="hdr-station" onclick="openStationPicker()">DJE5</span></div>
           <div class="station-line">
-            <span class="sig">v32 · By: Andrismar T.</span>
+            <span class="sig">v33 · By: Andrismar T.</span>
           </div>
         </div>
         <div class="hdr-controls">
@@ -1573,6 +1597,17 @@ let _partDetail = null;
 let _splitMode  = null;     // null = untried, true = available, false = fall back
 let _splitProbedAt = 0;
 const SPLIT_REPROBE_MS = 300000;   // five minutes
+// v33: set only by the backend's own answer. Until then nothing is POSTed to an
+// action the deployment might not implement. See fetchData for why that matters.
+let _partsSupported = false;
+const MIN_PARTS_GAS = 3.33;
+
+function gasSupportsParts(doc) {
+  if (!doc) return false;
+  if (doc._partsSupported === true) return true;
+  const v = parseFloat(doc._gasVersion);
+  return Number.isFinite(v) && v >= MIN_PARTS_GAS;
+}
 let _detailAt   = 0;
 let _detailInFlight = false;
 
@@ -1714,14 +1749,30 @@ async function fetchData() {
     // fetchSplit. Everything below this line is unchanged: it receives a
     // memory-shaped object either way and cannot tell which path produced it.
     let data = null;
-    // Having fallen back once, re-probe occasionally. Otherwise a phone left
-    // open while A1 and GAS are upgraded would keep pulling the whole document
-    // until someone thought to reload it, and nobody would think to.
-    if (_splitMode === false && (Date.now() - _splitProbedAt) > SPLIT_REPROBE_MS) {
+    // ── v33 THE SPLIT IS NEVER TRIED UNTIL THE BACKEND HAS SAID IT EXISTS ────
+    // v31 asked for ?action=pullLive straight away and treated an unhelpful
+    // answer as "not available". That was not merely optimistic, it was
+    // destructive: doPost in GAS v3.32 and earlier ends in a fallthrough that
+    // writes ANY unrecognised POST's body over FleetRadarMemory_<station>.json.
+    // So a phone on v31 talking to a v3.31 deployment overwrote the station's
+    // fleet data with {"station":"DJE5","part":"live"} every 25 seconds, A1's
+    // real push was destroyed between cycles, and the keep-last-good branch
+    // below then held a frozen snapshot on screen while the label said Synced.
+    //
+    // Capability is now a fact the backend states, not a thing this file infers
+    // from failure. The combined pull carries _gasVersion and _partsSupported
+    // and is safe against every deployment, so it goes first and the split is
+    // unlocked only once the answer says so. One ordinary pull, no probe
+    // request, and nothing is ever POSTed to an action that might not exist.
+    if (_splitMode === null && !_partsSupported) {
+      // Not yet established. Fall through to the combined pull below, which
+      // is what teaches us. Cheap: this is the request boot makes anyway.
+    } else if (_splitMode === false && _partsSupported
+               && (Date.now() - _splitProbedAt) > SPLIT_REPROBE_MS) {
       _splitMode = null;
       _splitProbedAt = Date.now();
     }
-    if (_splitMode !== false) {
+    if (_partsSupported && _splitMode !== false) {
       try { data = await fetchSplit(); } catch (se) { console.warn('[Radar] split pull failed:', se && se.message); }
       if (data) {
         if (_splitMode !== true) console.log('[Radar] split store available — polling live only');
@@ -1738,6 +1789,13 @@ async function fetchData() {
       // POST responses are NEVER cached, giving near-live data freshness.
       data = await postJson(cloudUrl + '?action=pull&station=' + currentStation,
         { station: currentStation }, PULL_TIMEOUT_MS);
+      // v33: this answer is where the split gets unlocked, and the only place.
+      if (data && !_partsSupported && gasSupportsParts(data)) {
+        _partsSupported = true;
+        _splitMode = null;
+        console.log('[Radar] backend reports v' + (data._gasVersion || '?')
+          + ' — split store enabled from the next cycle');
+      }
     }
     // v24 KEEP-LAST-GOOD: pullMemoryFresh returns {drivers:{}, _empty:true} for an
     // empty/absent station file, and {} is truthy — so the old `if (data.drivers)`
@@ -4488,7 +4546,7 @@ function _renderMobileDailyReport(s, fetchErr) {
     </style>
     <div style="margin-bottom:10px;">
       <div class="dly-m-eyebrow"><span class="dly-m-pulse-dot"></span>Live Operations Monitor</div>
-      <div class="dly-m-title">Daily Report <span class="dly-m-title-tag">v32</span></div>
+      <div class="dly-m-title">Daily Report <span class="dly-m-title-tag">v33</span></div>
       <div class="dly-m-meta">
         <b>${_mEsc(s.station || 'global')}</b> · <b>${_mEsc(s.lastDate)}</b> · ${k.opsClosed ? ((k.unclosedCount || 0) + '/' + k.totalCount + ' unclosed') : (k.activeCount + '/' + k.totalCount + ' active')}
         ${isMerged ? ' · <span style="color:#22c55e;">merged ☁</span>' : ' · <span style="color:#f59e0b;">local only</span>'}
@@ -5244,7 +5302,7 @@ function openSettings() {
       <button class="hdr-btn" style="width:100%;padding:10px;color:var(--red);border-color:var(--red)" onclick="if(confirm('Clear all local data and reset?')){localStorage.clear();sessionStorage.clear();location.reload()}">Reset Everything</button>
     </div>
     <div style="text-align:center;color:var(--fg3);font-size:10px;margin-top:20px">
-      <div>Mobile Amazon Radar v32 · A1 v24.07 · GAS v3.32</div>
+      <div>Mobile Amazon Radar v33 · A1 v24.08 · GAS v3.33</div>
       <div style="font-style:italic">By: Andrismar T.</div>
     </div>
   `;
@@ -5285,17 +5343,56 @@ if (lw) {
 //  SYNC LABEL UPDATER
 // ═══════════════════════
 
+// ── v33 "SYNCED" NOW MEANS THE DATA IS FRESH, NOT THAT THE PHONE HAS A SIGNAL ──
+// This ticker rewrote the label every second from lastFetch, which is the time
+// this phone last got an answer from the backend. That is a statement about
+// connectivity and nothing else, and it was stamping over setSyncStatus a second
+// after it ran — so v30's "Desktop data is 50m old, check A1 is pushing" warning
+// was drawn and then erased before anyone could read it. The operator was shown
+// a confident "Synced" on top of a snapshot that was hours out of date, which is
+// the worst thing a status line can do: it is not merely unhelpful, it actively
+// argues against the evidence on the rest of the screen.
+// The age of the DATA now wins whenever it is known and old. Connectivity is
+// still reported, but it can no longer overrule the more important fact.
 setInterval(() => {
-  if (lastFetch > 0) {
-    const ago = Math.round((Date.now() - lastFetch) / 1000);
-    const label = document.getElementById('syncLabel');
-    if (!label) return;
-    if (ago < 5) label.textContent = '● Synced just now';
-    else if (ago < 60) label.textContent = `● Synced ${ago}s ago`;
-    else label.textContent = `● Synced ${Math.floor(ago / 60)}m ago`;
-    const dot = document.getElementById('syncDot');
-    if (dot) dot.classList.toggle('live', ago < REFRESH_MS / 1000);
+  const label = document.getElementById('syncLabel');
+  const dot = document.getElementById('syncDot');
+  if (!label) return;
+  if (!lastFetch) return;
+
+  const ago = Math.round((Date.now() - lastFetch) / 1000);
+  const fmt = sec => sec < 60 ? sec + 's' : sec < 3600 ? Math.round(sec / 60) + 'm' : Math.round(sec / 3600) + 'h';
+
+  // How old is the DATA, as opposed to the conversation?
+  let dataAge = null;
+  try {
+    const stamp = (memory && (memory._fileModified || memory._cloudPushTs || memory.lastUpdated)) || 0;
+    if (stamp) dataAge = Math.round((Date.now() - stamp) / 1000);
+  } catch (_) {}
+
+  if (_cacheOnly) {
+    const n = (memory && memory.drivers) ? Object.keys(memory.drivers).length : 0;
+    label.textContent = '⏳ ' + n + ' drivers from cache · updating…';
+    if (dot) { dot.classList.remove('live'); dot.classList.remove('err'); }
+    return;
   }
+  if (dataAge != null && dataAge > 600) {
+    label.textContent = '⚠ Desktop data ' + fmt(dataAge) + ' old — check A1 is pushing';
+    if (dot) { dot.classList.remove('live'); dot.classList.add('err'); }
+    return;
+  }
+  if (dataAge != null && dataAge > 120) {
+    label.textContent = '● Desktop data ' + fmt(dataAge) + ' old · phone ' + fmt(ago) + ' ago';
+    if (dot) { dot.classList.remove('err'); dot.classList.toggle('live', ago < REFRESH_MS / 1000); }
+    return;
+  }
+  if (ago > (REFRESH_MS / 1000) * 3) {
+    label.textContent = '⚠ No answer for ' + fmt(ago) + ' — retrying';
+    if (dot) { dot.classList.remove('live'); dot.classList.add('err'); }
+    return;
+  }
+  label.textContent = ago < 5 ? '● Synced just now' : '● Synced ' + fmt(ago) + ' ago';
+  if (dot) { dot.classList.remove('err'); dot.classList.add('live'); }
 }, 1000);
 
 // ═══════════════════════
